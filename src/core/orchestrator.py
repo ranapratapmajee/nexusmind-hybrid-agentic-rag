@@ -1,12 +1,12 @@
 import time
 from typing import Any, Dict
 
+from removed_files.tools.registry import ToolRegistry
 from src.core.memory import SQLiteMemory
 from src.core.planner import Planner
 from src.core.router import RouterAgent
 from src.intelligence.rag import RAG
 from src.llm.gateway import LLMGateway
-from src.tools.registry import ToolRegistry
 
 
 class Orchestrator:
@@ -43,8 +43,6 @@ class Orchestrator:
 
         start_time = time.time()
 
-        print(f"\n[Session {session_id}] Query: {query}")
-
         trace = {
             "query": query,
             "session_id": session_id,
@@ -58,7 +56,7 @@ class Orchestrator:
             "latency_ms": None,
         }
 
-        # 1. MEMORY STORE
+        # 1. MEMORY STORE (USER)
         self.memory.add_message(session_id, "user", query)
 
         # 2. MEMORY LOAD
@@ -79,7 +77,13 @@ class Orchestrator:
         tool_context = ""
         web_context = ""
 
-        # 5. RAG
+        # =========================================================
+        # 5. INTELLIGENCE LAYER
+        # =========================================================
+
+        # -------------------------
+        # RAG
+        # -------------------------
         if action in ["RAG_SEARCH", "HYBRID"]:
             rag_result = self.rag.retrieve(
                 query=optimized_query,
@@ -94,37 +98,42 @@ class Orchestrator:
 
             trace["rag"] = rag_context
 
-        # 6. TOOLS
+        # -------------------------
+        # TOOLS
+        # -------------------------
         if action in ["EXECUTE_TOOL", "HYBRID"]:
             tool_name = route.get("tool") or self.tools.detect(query)
 
             try:
                 tool_output = self.tools.execute(tool_name, query)
-                tool_context = (
-                    tool_output if isinstance(tool_output, str) else str(tool_output)
-                )
-
+                tool_context = str(tool_output)
             except Exception as e:
                 tool_context = f"[Tool Error] {str(e)}"
 
             trace["tool"] = tool_context
 
-        # 7. WEB (RESERVED)
+        # -------------------------
+        # WEB (RESERVED)
+        # -------------------------
         if action in ["WEB_SEARCH", "HYBRID"]:
             web_context = "[WEB LAYER RESERVED - NOT IMPLEMENTED]"
             trace["web"] = web_context
 
-        # 8. CONTEXT FUSION
+        # =========================================================
+        # 6. CONTEXT FUSION
+        # =========================================================
         final_context = self._build_context(
-            memory=chat_history,
-            rag=rag_context,
-            tool=tool_context,
-            web=web_context,
+            memory=chat_history or "",
+            rag=rag_context or "",
+            tool=tool_context or "",
+            web=web_context or "",
         )
 
         trace["context"] = final_context
 
-        # 9. LLM
+        # =========================================================
+        # 7. LLM GENERATION
+        # =========================================================
         response = self.llm.generate(
             query=query,
             context=final_context,
@@ -134,10 +143,10 @@ class Orchestrator:
 
         trace["response"] = response
 
-        # 10. MEMORY STORE (ASSISTANT)
+        # 8. MEMORY STORE (ASSISTANT)
         self.memory.add_message(session_id, "assistant", response)
 
-        # 11. LATENCY
+        # 9. LATENCY
         trace["latency_ms"] = round((time.time() - start_time) * 1000, 2)
 
         return trace

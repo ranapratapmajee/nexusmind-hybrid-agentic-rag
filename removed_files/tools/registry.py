@@ -1,6 +1,6 @@
 from typing import Dict, Optional
 
-from src.tools.base import BaseTool
+from removed_files.tools.base import BaseTool
 
 
 class ToolRegistry:

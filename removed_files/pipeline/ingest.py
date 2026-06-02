@@ -1,11 +1,11 @@
 import time
 
+from removed_files.pipeline.chunking import semantic_chunk
+from removed_files.pipeline.embedder import Embedder
+from removed_files.pipeline.loader import LocalFileLoader
+from removed_files.pipeline.preprocess import TextPreprocessor
+from removed_files.pipeline.utils import generate_id
 from src.database import VectorStore
-from src.pipeline.chunking import semantic_chunk
-from src.pipeline.embedder import Embedder
-from src.pipeline.loader import LocalFileLoader
-from src.pipeline.preprocess import TextPreprocessor
-from src.pipeline.utils import generate_id
 
 
 class IngestionPipeline:

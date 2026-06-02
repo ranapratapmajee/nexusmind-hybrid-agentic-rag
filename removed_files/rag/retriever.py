@@ -1,7 +1,7 @@
 from typing import Any, Dict, List
 
+from removed_files.pipeline.embedder import Embedder
 from src.database.operations import VectorStore
-from src.pipeline.embedder import Embedder
 
 
 class Retriever:
