@@ -2,246 +2,444 @@
 
 ## 🧠 Project Status Overview
 
-NexusMind is a hybrid AI orchestration system combining:
-- Local LLM routing (Ollama)
-- RAG (ChromaDB)
-- Tool execution system
-- Cloud LLM fallback (Gemini/OpenAI)
-- Middleware for optimization & observability
-- Streaming chatbot UI (Nexa)
+NexusMind is now structured as a **layered AI orchestration system**:
+
+### 🧱 Final Architecture Layers
+- 🎨 Presentation Layer → Streamlit UI (Nexa)
+- 🧠 Core Orchestration Layer → Planner, Router, Memory, Context
+- 📚 Intelligence Layer → RAG, Web Search, Tools
+- 🤖 Model Layer → LLM Gateway (Ollama / Gemini / OpenAI / Anthropic)
+- ⚙️ Governance Layer → Cost, latency, safety, evaluation
 
 ---
 
-# ✅ COMPLETED (DONE)
+```text
+┌────────────────────────────────────────────────────────────┐
+│                     PRESENTATION LAYER                     │
+│                    (Streamlit - Nexa UI)                  │
+└───────────────────────────┬────────────────────────────────┘
+                            │
+                            ▼
+┌────────────────────────────────────────────────────────────┐
+│                  ORCHESTRATION LAYER (CORE)               │
+│                                                            │
+│  ┌──────────────┐   ┌──────────────┐   ┌──────────────┐   │
+│  │ Planner      │   │ Router       │   │ Memory Agent │   │
+│  └──────────────┘   └──────────────┘   └──────────────┘   │
+│          │                  │                 │             │
+│          └──────────┬───────┴───────┬────────┘             │
+│                     ▼               ▼                      │
+│              Tool Execution     Retrieval Control         │
+│                                                            │
+└───────────────────────────┬────────────────────────────────┘
+                            │
+                            ▼
+┌────────────────────────────────────────────────────────────┐
+│                 INTELLIGENCE & DATA LAYER                 │
+│                                                            │
+│   ┌──────────────┐   ┌──────────────┐   ┌──────────────┐  │
+│   │ RAG System   │   │ Web Search   │   │ Tools System │  │
+│   │ (ChromaDB)   │   │ (Scraping)   │   │ (Plugins)    │  │
+│   └──────────────┘   └──────────────┘   └──────────────┘  │
+│                                                            │
+└───────────────────────────┬────────────────────────────────┘
+                            │
+                            ▼
+┌────────────────────────────────────────────────────────────┐
+│                    MODEL ABSTRACTION LAYER                │
+│                                                            │
+│   ┌────────────────────────────────────────────────────┐   │
+│   │ LLM Gateway (SINGLE ENTRY POINT)                   │   │
+│   │ - Ollama                                           │   │
+│   │ - Gemini                                           │   │
+│   │ - OpenAI                                           │   │
+│   │ - Anthropic                                        │   │
+│   └────────────────────────────────────────────────────┘   │
+│                                                            │
+└───────────────────────────┬────────────────────────────────┘
+                            │
+                            ▼
+┌────────────────────────────────────────────────────────────┐
+│                 GOVERNANCE LAYER (CRITICAL)               │
+│                                                            │
+│   - Critic / Validator                                    │
+│   - Cost Tracker                                          │
+│   - Latency Monitor                                       │
+│   - Token Budget Manager                                  │
+│                                                            │
+└────────────────────────────────────────────────────────────┘
+```
+
+
+```text
+nexusmind-hybrid-agentic-rag/
+│
+├── frontend/                          # 🧠 PRESENTATION LAYER
+│   └── streamlit_app.py              # Nexa UI only (no logic)
+│
+├── src/
+│
+│   ├── core/                         # 🧠 ORCHESTRATION LAYER (BRAIN)
+│   │   ├── orchestrator.py           # main request flow controller
+│   │   ├── planner.py                # decides multi-step plan
+│   │   ├── router.py                 # route: RAG / TOOL / LLM / WEB
+│   │   ├── memory.py                 # unified session + memory agent
+│   │
+│   │   # ❌ REMOVED:
+│   │   # state.py → merged into memory.py
+│   │   # context_manager.py → merged into orchestrator.py
+│   │
+│
+│   ├── intelligence/                  # 📚 DATA + CAPABILITIES LAYER
+│   │
+│   │   ├── rag.py                    # merged: retriever + ranking + formatter
+│   │   ├── web_search.py            # scraping / external search layer
+│   │   ├── tools.py                 # merged tool engine (calc + plugins + registry)
+│   │   ├── ingestion.py             # merged pipeline (loader + chunk + embed + ingest)
+│   │
+│   │   # ❌ REMOVED:
+│   │   # rag/retriever.py
+│   │   # rag/ranking.py
+│   │   # rag/formatter.py
+│   │   # pipeline/*
+│   │   # tools/base.py + registry.py + calculator.py
+│   │
+│
+│   ├── llm/                          # 🤖 MODEL ABSTRACTION LAYER
+│   │   ├── gateway.py               # SINGLE ENTRY POINT for all models
+│   │   ├── providers/
+│   │   │   ├── ollama.py
+│   │   │   ├── gemini.py
+│   │   │   ├── openai.py
+│   │   │   ├── anthropic.py
+│   │   │
+│   │   ├── prompts.py               # centralized prompt templates
+│   │
+│
+│   ├── governance/                   # ⚙️ CONTROL / OPTIMIZATION LAYER
+│   │   ├── cost.py                  # token + cost tracking
+│   │   ├── latency.py               # TTFT + execution timing
+│   │   ├── tracer.py                # full request lifecycle logs
+│   │   ├── guardrails.py            # safety + validation
+│   │   ├── budget.py                # token limits + trimming logic
+│   │
+│   │   # ❌ REMOVED:
+│   │   # middleware/ (merged here fully)
+│   │
+│
+│   ├── api/                         # 🌐 FASTAPI LAYER
+│   │   └── server.py
+│
+│
+│   ├── database/                    # 🗄️ STORAGE LAYER
+│   │   ├── chroma.py
+│   │   ├── operations.py
+│
+│
+│   ├── memory/                     # 🧠 PERSISTENT STORAGE (LOW-LEVEL)
+│   │   └── sqlite_memory.py
+│
+│
+│   ├── config/                     # ⚙️ CONFIG SYSTEM
+│   │   ├── config.py
+│   │   ├── config.yaml
+│
+│
+│   ├── shared/                     # 🔗 CROSS-CUTTING UTILITIES (NEW)
+│   │   ├── types.py               # Pydantic models (RouterDecision, etc.)
+│   │   ├── utils.py
+│   │
+│
+├── data/                           # documents / PDFs
+├── docker-compose.yaml
+├── run.sh
+├── pyproject.toml
+├── README.md
+└── PLANNING.md
+```
+
+# ✅ COMPLETED (STABLE FOUNDATION)
 
 ## 🏗️ Core Infrastructure
 - [x] FastAPI backend server setup
-- [x] Streamlit frontend (basic Nexa UI)
-- [x] Docker setup for ChromaDB
-- [x] Basic project folder structure
+- [x] Streamlit frontend (basic Nexa UI working)
+- [x] Dockerized ChromaDB
+- [x] Clean project structure baseline
 - [x] Environment configuration (.env support)
 
 ---
 
-## 📚 RAG SYSTEM (Basic)
+## 📚 Intelligence Layer (RAG v1)
 - [x] ChromaDB integration
-- [x] Document ingestion pipeline (basic version)
-- [x] Embedding generation using local model (nomic-embed-text)
-- [x] Retrieval from vector DB
+- [x] Document ingestion pipeline (basic ETL)
+- [x] Embedding generation (nomic-embed-text)
+- [x] Vector retrieval system
 
 ---
 
-## 🤖 LLM INTEGRATION
-- [x] Local LLM setup (Ollama: qwen2.5-coder:3b-instruct)
-- [x] Basic prompt-based response generation
-- [x] Initial synthesis layer (LLM response formatting)
+## 🤖 Model Layer (LLM v1)
+- [x] Ollama integration (qwen2.5-coder:3b-instruct)
+- [x] Basic response generation pipeline
+- [x] Initial synthesis logic
 
 ---
 
-## 🔧 TOOL SYSTEM (Basic)
+## 🔧 Tools System (v1)
 - [x] Calculator tool
-- [x] Tool registry structure (initial version)
+- [x] Tool registry structure
 
 ---
 
-## 🧠 MEMORY SYSTEM (Basic)
-- [x] SQLite session memory (basic chat persistence)
+## 🧠 Memory System (v1)
+- [x] SQLite session memory
+- [x] Basic chat persistence per session
 
 ---
 
-## ⚡ ORCHESTRATION (Early Stage)
-- [x] Basic request flow: UI → API → Orchestrator → LLM/RAG
-- [x] Initial router concept (non-strict logic)
+## 🧠 Core Orchestration (v1)
+- [x] Basic request pipeline:
+  UI → API → Orchestrator → LLM/RAG
+- [x] Initial router (non-deterministic logic)
 
 ---
 
-# 🚧 IN PROGRESS (PARTIAL / WEAK AREAS)
-
-## 🎨 CHAT UI (PRIORITY UPGRADE AREA 🔥)
-- [ ] Real-time streaming chat UI (Nexa v2)
-- [ ] Token-by-token response rendering
-- [ ] Typing indicator (“Nexa is thinking…”)
-- [ ] Chat bubble UI (user vs assistant separation)
-- [ ] Message state system (thinking / streaming / complete)
-- [ ] Smooth incremental rendering (no full rerender)
-- [ ] Tool-call visualization in chat (future)
+# 🚧 ACTIVE DEVELOPMENT (NEXT PRIORITY)
 
 ---
 
-## 🧭 ROUTER AGENT (CRITICAL)
-- [ ] No strict structured output (JSON/Pydantic missing)
-- [ ] No deterministic routing schema
-- [ ] No routing evaluation dataset
-- [ ] No fallback rule engine
+## 🎨 Presentation Layer (NEXA UI v2) 🔥 HIGH PRIORITY
+📍 `frontend/`
+
+### Current Gaps
+- [ ] Streaming UX polish (token-by-token rendering)
+- [ ] Typing indicator ("Nexa is thinking…")
+- [ ] Chat bubble system refinement
+- [ ] Message states (thinking → streaming → done)
+- [ ] Tool-call visualization (future)
+- [ ] Smooth incremental rendering (no full rerun flicker)
 
 ---
 
-## 📦 RAG PIPELINE (IMPROVEMENT NEEDED)
-- [ ] No semantic chunking (basic chunking only)
-- [ ] No reranking (RRF not implemented)
-- [ ] No metadata filtering strategy
-- [ ] No chunk quality validation
+## 🧠 Core Orchestration Layer (CRITICAL)
+📍 `src/core/`
+
+### Router v2 (must become deterministic)
+- [ ] Structured routing (Pydantic-based)
+- [ ] Decision types:
+  - DIRECT_LLM
+  - RAG_QUERY
+  - TOOL_EXECUTION
+  - HYBRID
+
+### Planner Agent (NEW)
+- [ ] Break query → sub-tasks
+- [ ] Decide execution order
+
+### Memory Manager (Upgrade)
+- [ ] Long-term + session separation
+- [ ] Context compression support
 
 ---
 
-## ⚙️ MIDDLEWARE (PARTIAL)
-- [ ] No real token counting system
-- [ ] No TTFT tracking
-- [ ] No per-stage latency measurement
-- [ ] No cost estimation system
-- [ ] Context trimming is basic/manual
+## 📚 Intelligence Layer (RAG v2)
+📍 `src/intelligence/`
+
+### RAG Improvements
+- [ ] Semantic chunking (replace naive splitting)
+- [ ] Metadata filtering (category/source/time)
+- [ ] Reranking (RRF implementation)
+- [ ] Chunk quality scoring
+- [ ] Context trimming strategy
+
+### Web Search Layer (NEW)
+- [ ] Free-first scraping pipeline
+- [ ] Structured extraction from web pages
+
+### Tools System (v2)
+- [ ] Tool execution sandbox
+- [ ] Safe function calling interface
 
 ---
 
-## 🔁 SYNTHESIS LAYER
-- [ ] No structured prompt templates per task type
-- [ ] No strict grounding enforcement
-- [ ] No multi-document reasoning optimization
+## 🤖 Model Layer (LLM Gateway v1 → v2)
+📍 `src/llm/gateway.py`
+
+### Required Upgrade
+- [ ] Unified streaming interface for all providers
+- [ ] Provider adapters:
+  - Ollama
+  - Gemini
+  - OpenAI
+  - Anthropic
+
+### Model Router Policy
+- [ ] Smart selection rules:
+  - speed vs reasoning vs cost
+- [ ] Fallback chain:
+  Ollama → Gemini → OpenAI → Anthropic
 
 ---
 
-# ❌ NOT STARTED (HIGH PRIORITY NEXT)
+## ⚙️ Governance Layer (CRITICAL DIFFERENTIATOR)
+📍 `src/governance/`
 
-## 🧪 STREAMING BACKEND (CRITICAL FOR UI 🔥)
-- [ ] FastAPI SSE/WebSocket streaming endpoint
-- [ ] Chunked token streaming from Ollama
-- [ ] Async response pipeline (non-blocking)
-- [ ] Stream cancellation handling
-- [ ] Latency-safe streaming design
+### Observability
+- [ ] Token usage tracking
+- [ ] Cost estimation per request
+- [ ] Latency tracking (TTFT + total)
 
----
+### Guardrails
+- [ ] Context window control
+- [ ] Prompt compression
+- [ ] Safety filters
 
-## 🧪 EVALUATION SYSTEM
-- [ ] Router accuracy evaluation dataset
-- [ ] RAG relevance scoring system
-- [ ] Hallucination detection test suite
-- [ ] Benchmark query set
-
----
-
-## 📊 OBSERVABILITY DASHBOARD
-- [ ] Request latency dashboard
-- [ ] Token usage tracking UI
-- [ ] Routing distribution analytics
-- [ ] Cost tracking per query
+### Evaluation
+- [ ] Router accuracy scoring
+- [ ] RAG relevance evaluation
+- [ ] Hallucination detection checks
 
 ---
 
-## 🧠 ADVANCED ROUTER (V2)
-- [ ] Pydantic-based structured output
-- [ ] JSON schema validation
-- [ ] Deterministic fallback rules
-- [ ] Tool execution routing (safe function calls)
+# ❌ NOT STARTED (HIGH IMPACT SYSTEMS)
 
 ---
 
-## 🔄 FAILURE HANDLING LAYER
-- [ ] Retry logic for LLM failures
-- [ ] ChromaDB failure fallback
+## 🧪 Streaming Backend (CRITICAL FOR UX)
+- [ ] FastAPI SSE/WebSocket streaming
+- [ ] True token streaming from all LLMs
+- [ ] Async non-blocking pipeline
+- [ ] Cancel / interrupt streaming
+
+---
+
+## 📊 Observability Dashboard (Engineering Value)
+- [ ] Request-level tracing UI
+- [ ] Cost dashboard
+- [ ] Latency analytics
+- [ ] Routing distribution stats
+
+---
+
+## 🧪 Evaluation System (MUST FOR PORTFOLIO)
+- [ ] Benchmark dataset (queries)
+- [ ] RAG scoring system
+- [ ] Router evaluation suite
+- [ ] Hallucination detection pipeline
+
+---
+
+## 🔁 Failure Handling Layer
+- [ ] Retry policies per LLM
 - [ ] JSON parsing recovery system
-- [ ] Safe default response mode
+- [ ] Safe fallback responses
+- [ ] ChromaDB failure fallback
 
 ---
 
-# 🌐 FUTURE FEATURES (VISION)
-
-## 🌍 HYBRID SEARCH LAYER
-- [ ] Web scraping-based search engine
-- [ ] Real-time data ingestion (news, docs)
+# 🌐 FUTURE EVOLUTION (POST MVP)
 
 ---
 
-## 🤖 MULTI-AGENT SYSTEM
-- [ ] Planner agent
-- [ ] Tool execution agent
-- [ ] Critic / validator agent
-- [ ] Memory agent
+## 🤖 Multi-Agent System Expansion
+- Planner Agent (task decomposition)
+- Critic Agent (validation)
+- Tool Agent (execution control)
+- Memory Agent (context optimization)
 
 ---
 
-## 🔁 SELF-IMPROVEMENT LOOP (CRAG)
-- [ ] Retrieval → Generation → Critique → Fix loop
+## 🔁 Self-Improving Loop (CRAG)
+- Retrieval → Generation → Critique → Fix loop
 
 ---
 
-## ⚡ PERFORMANCE OPTIMIZATION
-- [ ] Query caching system
-- [ ] Prompt prefix caching (Ollama optimization)
-- [ ] Context compression layer
+## 🌍 Advanced Web Intelligence
+- Real-time scraping engine
+- Structured data extraction
+- Domain-specific knowledge ingestion
 
 ---
 
-## 🌐 ADVANCED UI FEATURES
-- [ ] Tool execution visualization in chat
-- [ ] RAG source citations in expandable cards
-- [ ] Latency + token debug mode
-- [ ] Streaming markdown renderer
+## ⚡ Performance Engineering
+- Query caching layer
+- Prompt prefix caching (Ollama optimization)
+- Context compression engine
 
 ---
 
-# 📌 EXECUTION ROADMAP
+## 🌐 Advanced UI Features
+- Tool execution visualization
+- RAG source cards
+- Debug mode (tokens + latency)
+- Streaming markdown renderer
 
-## Phase 1: UI FIRST
+---
+
+# 📌 EXECUTION ROADMAP (FINAL STRUCTURE)
+
+---
+
+## Phase 1 — Presentation Layer First 🔥
 Goal: Make Nexa feel alive
 
-- Real-time streaming chat UI
-- Typing indicator
-- Chat bubble redesign
-- Message state system
+- Streaming UI (token-by-token)
+- Typing indicator system
+- Chat UX polish
+- Message state management
 
 ---
 
-## Phase 2: Streaming Backend
-Goal: Enable real-time token flow
+## Phase 2 — Streaming Backend
+Goal: Real-time intelligence flow
 
-- FastAPI SSE/WebSocket streaming
-- Ollama streaming integration
-- Async pipeline design
-
----
-
-## Phase 3: Intelligence Layer
-Goal: Make system smarter
-
-- Router V2 (Pydantic structured output)
-- Better RAG (reranking + metadata filtering)
-- Tool execution improvements
+- SSE/WebSocket FastAPI
+- Streaming from LLM Gateway
+- Async orchestration pipeline
 
 ---
 
-## Phase 4: Engineering Layer
-Goal: Make system measurable
+## Phase 3 — Intelligence Layer Upgrade
+Goal: Make system actually smart
 
-- Middleware observability
-- Token + cost tracking
-- Latency monitoring
+- Router v2 (structured decisions)
+- RAG v2 (rerank + metadata filtering)
+- Tool execution system v2
 
 ---
 
-## Phase 5: Evaluation + Portfolio Polish
-Goal: Make it interview-ready
+## Phase 4 — Governance Layer
+Goal: Make system measurable & production-ready
 
-- Evaluation dataset
-- Benchmark results
+- Cost tracking
+- Latency tracking
+- Evaluation system
+- Guardrails
+
+---
+
+## Phase 5 — Portfolio Polish
+Goal: Make it interview-grade
+
+- Benchmarks
 - Architecture diagrams
 - Performance metrics
+- Case studies ("reduced token cost by X%")
 
 ---
 
-# 🎯 SUCCESS DEFINITION
+# 🎯 SUCCESS DEFINITION (FINAL)
 
 NexusMind is complete when:
 
-- Chat feels real-time and human-like
-- Every decision is routed deterministically
-- Every request is measurable (latency, cost, tokens)
+- UI feels real-time and human-like
+- Every request is routed deterministically
+- Every model is interchangeable via gateway
+- Every cost and latency is measurable
 - RAG is evaluated, not assumed correct
-- System is reproducible and failure-safe
+- System is failure-safe and reproducible
 
 ---
 
-# 🧠 CORE PRINCIPLE
+# 🧠 CORE DESIGN RULE (FINAL)
 
-> “A system is not intelligent because it responds — it is intelligent because it decides efficiently.”
-
----
+> “Core decides WHAT happens, Intelligence finds HOW, Models generate ANSWERS, Governance ensures CONTROL.”

@@ -22,7 +22,7 @@ At its core, NexusMind powers **Nexa**, a smart AI assistant that behaves like a
 
 ## 🤖 Meet Nexa
 
-**Nexa** Nexa is the user-facing AI chatbot powered by NexusMind.
+**Nexa** is the user-facing AI chatbot powered by NexusMind.
 
 Unlike traditional assistants, Nexa:
 
@@ -109,43 +109,60 @@ User (Nexa UI - Streamlit)
 ### 🔮 FUTURE ARCHITECTURE (Planned Evolution)
 
 ```text
-                     ┌──────────────────────┐
-                     │   Web Search Layer   │
-                     │ (Free-first scraping)│
-                     └──────────┬───────────┘
-                                │
-                 ┌──────────────▼────────────────┐
-                 │ Multi-Agent Orchestration Hub │
-                 │  - Planner Agent              │
-                 │  - Critic Agent              │
-                 │  - Tool Agent                │
-                 │  - Memory Agent              │
-                 └──────────────┬────────────────┘
-                                │
-        ┌───────────────────────┼────────────────────────┐
-        ▼                       ▼                        ▼
-┌──────────────┐     ┌─────────────────┐     ┌──────────────────┐
-│ Local LLM     │     │ RAG Expansion   │     │ Web Scraping     │
-│ (Fast tasks)  │     │ (Hybrid search) │     │ (Amazon/Flipkart)│
-└──────────────┘     └─────────────────┘     └──────────────────┘
-                                │
-                                ▼
-                    ┌──────────────────────┐
-                    │ Cloud LLM Gateway    │
-                    │ (Gemini / OpenAI)    │
-                    │ ONLY fallback layer   │
-                    └──────────┬───────────┘
-                               │
-                               ▼
-                    ┌──────────────────────┐
-                    │ Critic / Validator   │
-                    │ (Hallucination check)│
-                    └──────────┬───────────┘
-                               │
-                               ▼
-                    ┌──────────────────────┐
-                    │ Nexa UI (Streamlit)  │
-                    └──────────────────────┘
+┌────────────────────────────────────────────────────────────┐
+│                     PRESENTATION LAYER                     │
+│                    (Streamlit - Nexa UI)                  │
+└───────────────────────────┬────────────────────────────────┘
+                            │
+                            ▼
+┌────────────────────────────────────────────────────────────┐
+│                  ORCHESTRATION LAYER (CORE)               │
+│                                                            │
+│  ┌──────────────┐   ┌──────────────┐   ┌──────────────┐   │
+│  │ Planner      │   │ Router       │   │ Memory Agent │   │
+│  └──────────────┘   └──────────────┘   └──────────────┘   │
+│          │                  │                 │             │
+│          └──────────┬───────┴───────┬────────┘             │
+│                     ▼               ▼                      │
+│              Tool Execution     Retrieval Control         │
+│                                                            │
+└───────────────────────────┬────────────────────────────────┘
+                            │
+                            ▼
+┌────────────────────────────────────────────────────────────┐
+│                 INTELLIGENCE & DATA LAYER                 │
+│                                                            │
+│   ┌──────────────┐   ┌──────────────┐   ┌──────────────┐  │
+│   │ RAG System   │   │ Web Search   │   │ Tools System │  │
+│   │ (ChromaDB)   │   │ (Scraping)   │   │ (Plugins)    │  │
+│   └──────────────┘   └──────────────┘   └──────────────┘  │
+│                                                            │
+└───────────────────────────┬────────────────────────────────┘
+                            │
+                            ▼
+┌────────────────────────────────────────────────────────────┐
+│                    MODEL ABSTRACTION LAYER                │
+│                                                            │
+│   ┌────────────────────────────────────────────────────┐   │
+│   │ LLM Gateway (SINGLE ENTRY POINT)                   │   │
+│   │ - Ollama                                           │   │
+│   │ - Gemini                                           │   │
+│   │ - OpenAI                                           │   │
+│   │ - Anthropic                                        │   │
+│   └────────────────────────────────────────────────────┘   │
+│                                                            │
+└───────────────────────────┬────────────────────────────────┘
+                            │
+                            ▼
+┌────────────────────────────────────────────────────────────┐
+│                 GOVERNANCE LAYER (CRITICAL)               │
+│                                                            │
+│   - Critic / Validator                                    │
+│   - Cost Tracker                                          │
+│   - Latency Monitor                                       │
+│   - Token Budget Manager                                  │
+│                                                            │
+└────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -181,22 +198,41 @@ User (Nexa UI - Streamlit)
 ## 📁 Project Structure
 
 ```text
-nexusmind-hybrid-agentic-rag/
-├── config/                # Central config loader (env + yaml)
-├── frontend/              # Nexa UI (Streamlit)
-├── src/
-│   ├── core/              # Orchestrator + context manager
-│   ├── agents/            # Router + synthesis agents
-│   ├── rag/               # Retrieval system
-│   ├── tools/             # Plugin tools
-│   ├── database/          # ChromaDB integration
-│   ├── memory/            # SQLite memory system
-│   ├── pipeline/          # Ingestion + embedding pipeline
-│   ├── api/               # FastAPI backend
+nexusmind/
 │
-├── data/                  # Input documents (PDFs, text)
-├── docker-compose.yaml    # ChromaDB infra
-├── run.sh                 # One-click startup
+├── frontend/                  # UI (ONLY UI logic)
+│
+├── src/
+│   ├── core/                  # 🧠 ORCHESTRATION LAYER (IMPORTANT)
+│   │   ├── orchestrator.py
+│   │   ├── planner.py
+│   │   ├── router.py
+│   │   ├── memory_manager.py
+│   │
+│   ├── intelligence/         # 📚 DATA + REASONING LAYER
+│   │   ├── rag/
+│   │   ├── web_search/
+│   │   ├── tools/
+│   │
+│   ├── llm/                  # 🤖 MODEL ABSTRACTION (SINGLE ENTRY)
+│   │   ├── gateway.py
+│   │   ├── providers/
+│   │
+│   ├── governance/          # ⚙️ ALL OPTIMIZATION LIVES HERE
+│   │   ├── cost.py
+│   │   ├── latency.py
+│   │   ├── tracer.py
+│   │   ├── guardrails.py
+│   │
+│   ├── api/
+│   ├── pipeline/
+│   ├── database/
+│   ├── memory/
+│
+├── config/
+├── data/
+├── docker-compose.yaml
+├── run.sh
 └── README.md
 ```
 

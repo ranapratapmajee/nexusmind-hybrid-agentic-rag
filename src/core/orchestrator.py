@@ -1,162 +1,172 @@
-from src.agents.router_agent import RouterAgent
-from src.agents.synthesis_agent import SynthesisAgent
+from removed_files.memory.sqlite_memory import SQLiteMemory
 from src.core.context_manager import ContextManager
-from src.core.state import NexaState
-from src.memory.sqlite_memory import SQLiteMemory
+from src.core.planner import Planner
+from src.core.router import RouterAgent
+from src.llm.gateway import LLMGateway
 from src.rag.ranking import ResultRanker
 from src.rag.retriever import Retriever
 from src.tools.registry import ToolRegistry
 
 
 class Orchestrator:
-    def __init__(self):
-        print("[Orchestrator] Nexa Brain v4 (SQLite + Deterministic Memory)")
+    """
+    🧠 NexusMind Core Brain (FINAL ARCHITECTURE)
 
+    Flow:
+    User → Planner → Router → Intelligence Layer → LLM Gateway → Response
+    """
+
+    def __init__(self):
+        print("[Orchestrator] Initializing NexusMind Core v3")
+
+        # =========================
+        # CORE LAYERS
+        # =========================
+        self.planner = Planner()
         self.router = RouterAgent()
-        self.synthesizer = SynthesisAgent()
+
+        # =========================
+        # MEMORY + CONTEXT
+        # =========================
+        self.memory = SQLiteMemory()
+        self.context_manager = ContextManager()
+
+        # =========================
+        # INTELLIGENCE LAYER
+        # =========================
         self.retriever = Retriever()
         self.ranker = ResultRanker(mode="simple")
         self.tools = ToolRegistry()
 
-        self.memory = SQLiteMemory()
-        self.context_manager = ContextManager()
+        # =========================
+        # MODEL GATEWAY (MULTI-LLM)
+        # =========================
+        self.llm = LLMGateway()
+
+        print("[Orchestrator] Ready.")
 
     # =========================================================
-    # 🔥 MEMORY EXTRACTION (CRITICAL FIX)
+    # MEMORY
     # =========================================================
-    def _extract_user_name(self, messages):
-        """
-        Deterministic identity extractor (NO LLM RELIANCE)
-        """
-        for m in reversed(messages):
-            c = m["content"].lower()
-
-            if "my name is" in c:
-                return m["content"].split("is")[-1].strip().title()
-
-            if "i am" in c and len(c.split()) <= 5:
-                return m["content"].split("i am")[-1].strip().title()
-
-        return None
+    def _load_memory(self, session_id: str, limit: int = 20):
+        chat_history = self.memory.format_for_llm(session_id, limit=limit)
+        raw_messages = self.memory.get_messages(session_id, limit=limit)
+        return chat_history, raw_messages
 
     # =========================================================
-    # MAIN EXECUTION
+    # MAIN EXECUTION FLOW
     # =========================================================
     def run(self, query: str, session_id: str):
 
-        state = NexaState(query=query)
-
         print(f"\n[Session {session_id}] Query: {query}")
 
-        # =====================================================
-        # 1. STORE USER MESSAGE
-        # =====================================================
+        # -------------------------
+        # 1. STORE USER INPUT
+        # -------------------------
         self.memory.add_message(session_id, "user", query)
 
-        # =====================================================
+        # -------------------------
         # 2. LOAD MEMORY
-        # =====================================================
-        raw_messages = self.memory.get_messages(session_id, limit=20)
-        chat_history = self.memory.format_for_llm(session_id, limit=20)
+        # -------------------------
+        chat_history, raw_messages = self._load_memory(session_id)
 
-        # =====================================================
-        # 3. 🔥 HARD MEMORY OVERRIDE (FIX FOR TEST FAILURE)
-        # =====================================================
-        user_name = self._extract_user_name(raw_messages)
+        # -------------------------
+        # 3. PLANNER (CONTEXT ONLY)
+        # -------------------------
+        plan = self.planner.create_plan(query=query, memory=chat_history)
 
-        if user_name and any(
-            x in query.lower() for x in ["my name", "what is my name", "who am i"]
-        ):
-            response = f"Your name is {user_name}."
+        print(f"[Planner] {plan}")
 
-            state.response = response
-            self.memory.add_message(session_id, "assistant", response)
-
-            return state.finalize()
-
-        # =====================================================
-        # 4. ROUTING
-        # =====================================================
+        # -------------------------
+        # 4. ROUTER (TRUTH SOURCE)
+        # -------------------------
         route = self.router.route(query)
 
-        state.route = route.get("action", "DIRECT_ANSWER")
-        state.metadata["reasoning"] = route.get("reasoning", "")
+        action = route["action"]
+        optimized_query = route.get("optimized_query", query)
 
         rag_context = ""
         tool_context = ""
+        web_context = ""
 
-        # =====================================================
-        # 5. RAG PIPELINE
-        # =====================================================
-        if state.route == "RAG_SEARCH":
-            raw = self.retriever.retrieve(
-                query=route.get("optimized_query") or query,
+        # =========================================================
+        # 5. INTELLIGENCE LAYER
+        # =========================================================
+
+        # -------------------------
+        # RAG PIPELINE
+        # -------------------------
+        if action in ["RAG_SEARCH", "HYBRID"]:
+            docs = self.retriever.retrieve(
+                query=optimized_query,
                 top_k=5,
             )
 
-            ranked = self.ranker.rank(raw, query=query)
-            docs = [r.get("text", "") for r in ranked if r.get("text")]
+            ranked = self.ranker.rank(docs, query=query)
+            texts = [d.get("text", "") for d in ranked if d.get("text")]
 
-            rag_context = self.context_manager.compress(docs)
+            rag_context = self.context_manager.compress(texts)
 
-        # =====================================================
-        # 6. TOOL PIPELINE
-        # =====================================================
-        elif state.route == "EXECUTE_TOOL":
+        # -------------------------
+        # TOOL PIPELINE
+        # -------------------------
+        if action in ["EXECUTE_TOOL", "HYBRID"]:
             tool_name = route.get("tool") or self.tools.detect(query)
 
             try:
-                tool_context = str(self.tools.execute(tool_name, query))
+                tool_output = self.tools.execute(tool_name, query)
+                tool_context = str(tool_output)
+
             except Exception as e:
                 tool_context = f"[Tool Error] {str(e)}"
 
-        # =====================================================
-        # 7. CONTEXT FUSION
-        # =====================================================
+        # -------------------------
+        # WEB SEARCH PIPELINE (future-ready)
+        # -------------------------
+        if action in ["WEB_SEARCH", "HYBRID"]:
+            web_context = "[Web Search Layer Not Implemented Yet]"
+
+        # =========================================================
+        # 6. CONTEXT FUSION
+        # =========================================================
         final_context = self.context_manager.build(
-            memory=chat_history,
-            rag=rag_context,
-            tool=tool_context,
+            memory=chat_history or "",
+            rag=rag_context or "",
+            tool=tool_context or "",
             history="",
         )
 
-        state.context = final_context
-
-        # =====================================================
-        # 8. SYNTHESIS
-        # =====================================================
-        response = self.synthesizer.generate(
+        # =========================================================
+        # 7. LLM GATEWAY (SINGLE ENTRY POINT)
+        # =========================================================
+        response = self.llm.generate(
             query=query,
             context=final_context,
+            route=route,
+            plan=plan,
         )
 
-        state.response = response
-
-        # =====================================================
-        # 9. STORE ASSISTANT RESPONSE
-        # =====================================================
+        # =========================================================
+        # 8. STORE RESPONSE
+        # =========================================================
         self.memory.add_message(session_id, "assistant", response)
 
-        return state.finalize()
+        return {
+            "response": response,
+            "route": route,
+            "plan": plan,
+            "context_used": bool(final_context),
+        }
 
     # =========================================================
-    # STREAMING
+    # STREAMING (PHASE-2 READY)
     # =========================================================
     def run_stream(self, query: str, session_id: str):
 
-        state = self.run(query, session_id)
+        result = self.run(query, session_id)
 
         def generator():
-            try:
-                stream = self.synthesizer.generate_stream(
-                    query=query,
-                    context=state.context or "",
-                )
+            for word in result["response"].split():
+                yield word + " "
 
-                for token in stream:
-                    yield token
-
-            except Exception as e:
-                yield f"[Stream Error] {str(e)}"
-
-        return generator(), state
+        return generator(), result
