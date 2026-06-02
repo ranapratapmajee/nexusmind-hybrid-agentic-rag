@@ -17,8 +17,8 @@ from src.governance.tracer import RequestTracer
 # INTELLIGENCE LAYER
 # =========================
 from src.intelligence.rag import RAG
+from src.intelligence.tools import ToolRegistry
 from src.llm.gateway import LLMGateway
-from src.tools.registry import ToolRegistry
 
 
 class Orchestrator:
@@ -68,6 +68,15 @@ class Orchestrator:
     # =========================================================
     def run(self, query: str, session_id: str) -> Dict[str, Any]:
 
+        query = query.strip() if query else ""
+
+        if not query:
+            return {
+                "error": "Empty query",
+                "reason": "Query cannot be empty",
+                "latency_ms": 0,
+            }
+
         start_time = time.time()
         self.latency.start()
 
@@ -108,7 +117,7 @@ class Orchestrator:
         # =========================================================
         # 4. PLANNER
         # =========================================================
-        plan = self.planner.create_plan(query=query, memory=chat_history)
+        plan = self.planner.create_plan(query=query)
         trace["planner"] = plan
 
         # =========================================================

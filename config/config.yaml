@@ -16,6 +16,12 @@ rag:
   chunk_overlap: 50
   top_k: 5
 
+  # 🔥 ADD THIS BLOCK
+embedding:
+  provider: ollama
+  model: nomic-embed-text
+  dimension: 768
+
 memory:
   max_messages: 50
 
