@@ -8,94 +8,179 @@ import streamlit as st
 # =========================================================
 API_URL = "http://127.0.0.1:9000/chat/stream"
 
-st.set_page_config(
-    page_title="NexusMind",
-    layout="wide",
+st.set_page_config(page_title="NexusMind", layout="wide")
+
+# =========================================================
+# CSS
+# =========================================================
+st.markdown(
+    """
+    <style>
+
+    .user-bubble {
+        background: #DCF8C6;
+        padding: 10px 14px;
+        border-radius: 14px;
+        max-width: 70%;
+        font-size: 15px;
+        line-height: 1.5;
+        float: right;
+        clear: both;
+    }
+
+    .assistant-bubble {
+        background: #F6F6F6;
+        padding: 12px 14px;
+        border-radius: 14px;
+        max-width: 75%;
+        font-size: 15px;
+        line-height: 1.6;
+        border-left: 3px solid #7C3AED;
+        float: left;
+        clear: both;
+    }
+
+    .system-indicator {
+        color: #8A8A8A;
+        font-size: 12px;
+        font-style: italic;
+        margin-bottom: 8px;
+    }
+
+    </style>
+    """,
+    unsafe_allow_html=True,
 )
 
 # =========================================================
 # SESSION STATE
 # =========================================================
-if "messages" not in st.session_state:
-    st.session_state.messages = []
+if "sessions" not in st.session_state:
+    st.session_state.sessions = {}
 
-if "session_id" not in st.session_state:
-    st.session_state.session_id = str(uuid.uuid4())
+if "current_session" not in st.session_state:
+    st.session_state.current_session = str(uuid.uuid4())
 
-# =========================================================
-# TITLE
-# =========================================================
-st.title("NexusMind: Self-Optimizing Hybrid RAG & Local Agentic Orchestrator")
+if "is_streaming" not in st.session_state:
+    st.session_state.is_streaming = False
 
-# =========================================================
-# CHAT DISPLAY (MAIN AREA)
-# =========================================================
-chat_container = st.container()
+if st.session_state.current_session not in st.session_state.sessions:
+    st.session_state.sessions[st.session_state.current_session] = []
 
-with chat_container:
-    for msg in st.session_state.messages:
-        if msg["role"] == "user":
-            # RIGHT SIDE
-            col1, col2 = st.columns([1, 2])
-            with col2:
-                st.markdown(
-                    f"""
-                    <div style='text-align: right; background:#DCF8C6; padding:10px; border-radius:10px; margin:5px'>
-                    {msg["content"]}
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-        else:
-            # LEFT SIDE
-            col1, col2 = st.columns([2, 1])
-            with col1:
-                st.markdown(
-                    f"""
-                    <div style='text-align: left; background:#F1F0F0; padding:10px; border-radius:10px; margin:5px'>
-                    {msg["content"]}
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
+messages = st.session_state.sessions[st.session_state.current_session]
 
 # =========================================================
-# INPUT (BOTTOM - LIKE CHATGPT)
+# FIRST GREETING
 # =========================================================
-user_input = st.chat_input("Type your message...")
+if len(messages) == 0:
+    messages.append(
+        {
+            "role": "assistant",
+            "content": "👋 Hi, I am **Nexa**. How can I help you today?",
+        }
+    )
 
-if user_input:
-    # store user message
-    st.session_state.messages.append({"role": "user", "content": user_input})
+# =========================================================
+# SIDEBAR
+# =========================================================
+with st.sidebar:
+    st.title("🧠 Nexa Sessions")
 
-    # display immediately
+    if st.button("➕ New Chat"):
+        new_id = str(uuid.uuid4())
+        st.session_state.sessions[new_id] = [
+            {
+                "role": "assistant",
+                "content": "👋 Hi, I am **Nexa**. How can I help you today?",
+            }
+        ]
+        st.session_state.current_session = new_id
+        st.rerun()
+
+    st.divider()
+
+    for sid in list(st.session_state.sessions.keys()):
+        if st.button(f"💬 {sid[:6]}", key=sid):
+            st.session_state.current_session = sid
+            st.rerun()
+
+# =========================================================
+# HEADER
+# =========================================================
+st.title("🧠 NexusMind — Nexa AI Assistant")
+st.caption("Agentic RAG Orchestrator with Streaming Responses")
+
+# =========================================================
+# INPUT (PHASE 1)
+# =========================================================
+user_input = st.chat_input("Message Nexa...")
+
+if user_input and not st.session_state.is_streaming:
+    messages.append({"role": "user", "content": user_input})
+
+    st.session_state.pending_query = user_input
+    st.session_state.is_streaming = True
+
     st.rerun()
 
 # =========================================================
-# RESPONSE HANDLING (STREAM)
+# CHAT RENDER (ALWAYS FIRST)
 # =========================================================
-if st.session_state.messages and st.session_state.messages[-1]["role"] == "user":
-    last_user_msg = st.session_state.messages[-1]["content"]
+for msg in messages:
+    if msg["role"] == "user":
+        st.markdown(
+            f"<div class='user-bubble'>{msg['content']}</div>", unsafe_allow_html=True
+        )
+    else:
+        st.markdown(
+            f"<div class='assistant-bubble'>{msg['content']}</div>",
+            unsafe_allow_html=True,
+        )
 
-    response_text = ""
+# =========================================================
+# STREAMING (PHASE 2 - AFTER RENDER FIX)
+# =========================================================
+if st.session_state.is_streaming:
+    query = st.session_state.pending_query
+
+    full_response = ""
+
+    system_placeholder = st.empty()
+    response_placeholder = st.empty()
 
     try:
         with requests.post(
             API_URL,
             json={
-                "query": last_user_msg,
-                "session_id": st.session_state.session_id,
+                "query": query,
+                "session_id": st.session_state.current_session,
             },
             stream=True,
         ) as r:
-            for chunk in r.iter_content(chunk_size=512):
+            for chunk in r.iter_content(chunk_size=64):
                 if chunk:
-                    response_text += chunk.decode("utf-8")
+                    system_placeholder.markdown(
+                        "<div class='system-indicator'>"
+                        "🧠 Nexa is thinking • routing • retrieving context..."
+                        "</div>",
+                        unsafe_allow_html=True,
+                    )
+
+                    full_response += chunk.decode("utf-8")
+
+                    response_placeholder.markdown(
+                        f"<div class='assistant-bubble'>{full_response}</div>",
+                        unsafe_allow_html=True,
+                    )
 
     except Exception as e:
-        response_text = f"⚠️ Error: {str(e)}"
+        full_response = f"⚠️ Error: {str(e)}"
 
-    # store assistant message
-    st.session_state.messages.append({"role": "assistant", "content": response_text})
+    system_placeholder.empty()
+
+    messages.append({"role": "assistant", "content": full_response})
+
+    st.session_state.is_streaming = False
+    st.session_state.pending_query = ""
 
     st.rerun()
