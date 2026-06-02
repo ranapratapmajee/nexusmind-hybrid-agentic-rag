@@ -1,47 +1,31 @@
 import time
 from typing import Any, Dict
 
+from src.core.memory import SQLiteMemory
 from src.core.planner import Planner
 from src.core.router import RouterAgent
+from src.intelligence.rag import RAG
 from src.llm.gateway import LLMGateway
-from src.memory.sqlite_memory import SQLiteMemory
-from src.rag.ranking import ResultRanker
-from src.rag.retriever import Retriever
 from src.tools.registry import ToolRegistry
 
 
 class Orchestrator:
     """
-    🧠 NexusMind Execution Engine v4 (FINAL)
+    🧠 NexusMind Execution Engine v4 (FINAL LOCKED)
 
     FLOW:
-    User → Planner → Router → Intelligence Layer → Context Builder → Gateway → Response
+    User → Planner → Router → RAG/Tools → Memory Context → Gateway → Response
     """
 
     def __init__(self):
-        print("[Orchestrator] Initializing NexusMind Core v4 (Execution Engine)")
+        print("[Orchestrator] Initializing NexusMind Core v4")
 
-        # =========================
-        # CORE BRAIN LAYERS
-        # =========================
         self.planner = Planner()
         self.router = RouterAgent()
-
-        # =========================
-        # MEMORY SYSTEM
-        # =========================
         self.memory = SQLiteMemory()
 
-        # =========================
-        # INTELLIGENCE LAYER
-        # =========================
-        self.retriever = Retriever()
-        self.ranker = ResultRanker(mode="simple")
+        self.rag = RAG()
         self.tools = ToolRegistry()
-
-        # =========================
-        # LLM GATEWAY (ONLY ENTRY POINT)
-        # =========================
         self.llm = LLMGateway()
 
         print("[Orchestrator] Ready.")
@@ -50,12 +34,10 @@ class Orchestrator:
     # MEMORY
     # =========================================================
     def _load_memory(self, session_id: str, limit: int = 20):
-        chat_history = self.memory.format_for_llm(session_id, limit=limit)
-        raw_messages = self.memory.get_messages(session_id, limit=limit)
-        return chat_history, raw_messages
+        return self.memory.format_for_llm(session_id, limit=limit)
 
     # =========================================================
-    # MAIN EXECUTION FLOW (FULL TRACE MODE)
+    # MAIN FLOW
     # =========================================================
     def run(self, query: str, session_id: str) -> Dict[str, Any]:
 
@@ -76,25 +58,17 @@ class Orchestrator:
             "latency_ms": None,
         }
 
-        # =====================================================
-        # 1. STORE USER INPUT
-        # =====================================================
+        # 1. MEMORY STORE
         self.memory.add_message(session_id, "user", query)
 
-        # =====================================================
-        # 2. LOAD MEMORY
-        # =====================================================
-        chat_history, raw_messages = self._load_memory(session_id)
+        # 2. MEMORY LOAD
+        chat_history = self._load_memory(session_id)
 
-        # =====================================================
         # 3. PLANNER
-        # =====================================================
         plan = self.planner.create_plan(query=query, memory=chat_history)
         trace["planner"] = plan
 
-        # =====================================================
         # 4. ROUTER
-        # =====================================================
         route = self.router.route(query)
         trace["route"] = route
 
@@ -105,49 +79,42 @@ class Orchestrator:
         tool_context = ""
         web_context = ""
 
-        # =====================================================
-        # 5. INTELLIGENCE LAYER
-        # =====================================================
-
-        # -------------------------
-        # RAG PIPELINE
-        # -------------------------
+        # 5. RAG
         if action in ["RAG_SEARCH", "HYBRID"]:
-            docs = self.retriever.retrieve(
+            rag_result = self.rag.retrieve(
                 query=optimized_query,
                 top_k=5,
             )
 
-            ranked = self.ranker.rank(docs, query=query)
-            texts = [d.get("text", "") for d in ranked if d.get("text")]
+            rag_context = (
+                rag_result.get("context", "")
+                if isinstance(rag_result, dict)
+                else str(rag_result)
+            )
 
-            rag_context = "\n\n".join(texts[-6:])
             trace["rag"] = rag_context
 
-        # -------------------------
-        # TOOL PIPELINE
-        # -------------------------
+        # 6. TOOLS
         if action in ["EXECUTE_TOOL", "HYBRID"]:
             tool_name = route.get("tool") or self.tools.detect(query)
 
             try:
                 tool_output = self.tools.execute(tool_name, query)
-                tool_context = str(tool_output)
+                tool_context = (
+                    tool_output if isinstance(tool_output, str) else str(tool_output)
+                )
+
             except Exception as e:
                 tool_context = f"[Tool Error] {str(e)}"
 
             trace["tool"] = tool_context
 
-        # -------------------------
-        # WEB PIPELINE (FUTURE READY)
-        # -------------------------
+        # 7. WEB (RESERVED)
         if action in ["WEB_SEARCH", "HYBRID"]:
-            web_context = "[Web Search Not Implemented]"
+            web_context = "[WEB LAYER RESERVED - NOT IMPLEMENTED]"
             trace["web"] = web_context
 
-        # =====================================================
-        # 6. CONTEXT FUSION (DIRECT, NO EXTRA CLASS DEPENDENCY)
-        # =====================================================
+        # 8. CONTEXT FUSION
         final_context = self._build_context(
             memory=chat_history,
             rag=rag_context,
@@ -157,9 +124,7 @@ class Orchestrator:
 
         trace["context"] = final_context
 
-        # =====================================================
-        # 7. LLM GATEWAY (SINGLE ENTRY POINT)
-        # =====================================================
+        # 9. LLM
         response = self.llm.generate(
             query=query,
             context=final_context,
@@ -169,20 +134,16 @@ class Orchestrator:
 
         trace["response"] = response
 
-        # =====================================================
-        # 8. STORE RESPONSE
-        # =====================================================
+        # 10. MEMORY STORE (ASSISTANT)
         self.memory.add_message(session_id, "assistant", response)
 
-        # =====================================================
-        # 9. LATENCY TRACKING
-        # =====================================================
+        # 11. LATENCY
         trace["latency_ms"] = round((time.time() - start_time) * 1000, 2)
 
         return trace
 
     # =========================================================
-    # STREAMING MODE (GATEWAY POWERED)
+    # STREAMING
     # =========================================================
     def run_stream(self, query: str, session_id: str):
 
@@ -190,35 +151,34 @@ class Orchestrator:
 
         def generator():
             try:
-                for token in self.llm.stream(
+                yield from self.llm.stream(
                     query=query,
                     context=trace["context"] or "",
                     route=trace["route"],
                     plan=trace["planner"],
-                ):
-                    yield token
+                )
             except Exception as e:
                 yield f"[Stream Error] {str(e)}"
 
         return generator(), trace
 
     # =========================================================
-    # INTERNAL CONTEXT BUILDER (NO EXTERNAL DEPENDENCY)
+    # CONTEXT BUILDER (FINAL ORDER)
     # =========================================================
     def _build_context(self, memory="", rag="", tool="", web="") -> str:
 
         sections = []
 
-        if memory:
-            sections.append("### MEMORY\n" + memory)
+        if tool:
+            sections.append("### TOOL OUTPUT\n" + tool)
 
         if rag:
             sections.append("### KNOWLEDGE\n" + rag)
 
-        if tool:
-            sections.append("### TOOL OUTPUT\n" + tool)
-
         if web:
             sections.append("### WEB\n" + web)
+
+        if memory:
+            sections.append("### MEMORY\n" + memory)
 
         return "\n\n".join(sections).strip()
