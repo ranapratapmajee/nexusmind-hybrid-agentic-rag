@@ -1,8 +1,7 @@
 import time
 from typing import Any, Dict
 
-from removed_files.tools.registry import ToolRegistry
-from src.core.memory import SQLiteMemory
+from src.core.memory import Memory
 from src.core.planner import Planner
 from src.core.router import RouterAgent
 from src.governance.budget import BudgetManager
@@ -13,8 +12,13 @@ from src.governance.budget import BudgetManager
 from src.governance.guardrails import Guardrails
 from src.governance.latency import LatencyTracker
 from src.governance.tracer import RequestTracer
+
+# =========================
+# INTELLIGENCE LAYER
+# =========================
 from src.intelligence.rag import RAG
 from src.llm.gateway import LLMGateway
+from src.tools.registry import ToolRegistry
 
 
 class Orchestrator:
@@ -23,7 +27,7 @@ class Orchestrator:
 
     FLOW:
     User → Guardrails → Budget → Planner → Router → RAG/Tools
-         → Context → LLM → Governance Logging → Response
+         → Memory Context → LLM → Governance Logging → Response
     """
 
     def __init__(self):
@@ -34,7 +38,7 @@ class Orchestrator:
         # =========================
         self.planner = Planner()
         self.router = RouterAgent()
-        self.memory = SQLiteMemory()
+        self.memory = Memory()
 
         # =========================
         # INTELLIGENCE
@@ -57,7 +61,7 @@ class Orchestrator:
     # MEMORY
     # =========================================================
     def _load_memory(self, session_id: str, limit: int = 20):
-        return self.memory.format_for_llm(session_id, limit=limit)
+        return self.memory.format_history(session_id, limit=limit)
 
     # =========================================================
     # MAIN FLOW
@@ -117,15 +121,11 @@ class Orchestrator:
         optimized_query = route.get("optimized_query", query)
 
         # =========================================================
-        # 6. CONTEXT HOLDERS
+        # 6. INTELLIGENCE LAYER
         # =========================================================
         rag_context = ""
         tool_context = ""
         web_context = ""
-
-        # =========================================================
-        # 7. INTELLIGENCE LAYER
-        # =========================================================
 
         # -------------------------
         # RAG
@@ -166,7 +166,7 @@ class Orchestrator:
             trace["web"] = web_context
 
         # =========================================================
-        # 8. CONTEXT FUSION
+        # 7. CONTEXT FUSION
         # =========================================================
         final_context = self._build_context(
             memory=chat_history or "",
@@ -178,11 +178,11 @@ class Orchestrator:
         trace["context"] = final_context
 
         # =========================================================
-        # 9. BUDGET CHECK (BEFORE LLM)
+        # 8. BUDGET CHECK (BEFORE LLM)
         # =========================================================
         budget_check = self.budget.can_proceed(
             text=final_context,
-            estimated_cost=0.001,  # MVP static estimate (can upgrade later)
+            estimated_cost=0.001,
         )
 
         if not budget_check["allowed"]:
@@ -192,7 +192,7 @@ class Orchestrator:
             }
 
         # =========================================================
-        # 10. LLM GENERATION
+        # 9. LLM GENERATION
         # =========================================================
         response = self.llm.generate(
             query=query,
@@ -204,18 +204,18 @@ class Orchestrator:
         trace["response"] = response
 
         # =========================================================
-        # 11. MEMORY STORE (ASSISTANT)
+        # 10. MEMORY STORE (ASSISTANT)
         # =========================================================
         self.memory.add_message(session_id, "assistant", response)
 
         # =========================================================
-        # 12. LATENCY TRACKING
+        # 11. LATENCY TRACKING
         # =========================================================
         trace["latency_ms"] = round((time.time() - start_time) * 1000, 2)
         self.latency.mark_first_token()
 
         # =========================================================
-        # 13. GOVERNANCE LOGGING
+        # 12. GOVERNANCE LOGGING
         # =========================================================
         trace["governance"] = {
             "guardrails": guard,
@@ -248,7 +248,7 @@ class Orchestrator:
         return generator(), trace
 
     # =========================================================
-    # CONTEXT BUILDER (FINAL ORDER)
+    # CONTEXT BUILDER
     # =========================================================
     def _build_context(self, memory="", rag="", tool="", web="") -> str:
 

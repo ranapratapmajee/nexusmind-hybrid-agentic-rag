@@ -10,16 +10,18 @@ import ollama
 
 class Memory:
     """
-    🧠 NexusMind Unified Memory System (FINAL)
+    🧠 NexusMind Unified Memory System (FINAL LOCKED VERSION)
 
     Responsibilities:
     -----------------------------------------
-    1. Short-term memory (RAM cache for UI)
-    2. Persistent memory (SQLite)
-    3. Semantic memory (embeddings in SQLite)
-    4. Context builder (REPLACES ContextManager)
+    1. Short-term memory (RAM cache for fast UI)
+    2. Persistent memory (SQLite storage)
+    3. Semantic memory (vector embeddings in SQLite)
+    4. Context builder (single source of truth for LLM context)
 
-    THIS IS THE ONLY MEMORY MODULE IN SYSTEM
+    RULE:
+    - This is the ONLY memory module in the system.
+    - No SQLiteMemory or other memory abstractions allowed.
     """
 
     def __init__(self, db_path: str = "nexa_memory.db", max_messages: int = 50):
@@ -27,7 +29,7 @@ class Memory:
         self.max_messages = max_messages
 
         # -------------------------
-        # FAST RAM CACHE (UI SPEED)
+        # FAST RAM CACHE (UI LAYER)
         # -------------------------
         self.sessions: Dict[str, deque] = defaultdict(
             lambda: deque(maxlen=max_messages)
@@ -36,13 +38,13 @@ class Memory:
         self._init_db()
 
     # =========================================================
-    # INIT DB
+    # DB INIT
     # =========================================================
     def _init_db(self):
         conn = sqlite3.connect(self.db_path)
         cur = conn.cursor()
 
-        # Chat messages
+        # Chat messages (short-term + persistent)
         cur.execute("""
         CREATE TABLE IF NOT EXISTS messages (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -53,7 +55,7 @@ class Memory:
         )
         """)
 
-        # Semantic memory
+        # Semantic memory (long-term retrieval)
         cur.execute("""
         CREATE TABLE IF NOT EXISTS memory_vectors (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -68,7 +70,7 @@ class Memory:
         conn.close()
 
     # =========================================================
-    # ADD MESSAGE (SYNC RAM + SQLITE)
+    # ADD MESSAGE (RAM + SQLITE SYNC)
     # =========================================================
     def add_message(self, session_id: str, role: str, content: str):
         msg = {
@@ -77,10 +79,10 @@ class Memory:
             "timestamp": time.time(),
         }
 
-        # 1. RAM CACHE (UI FAST PATH)
+        # 1. RAM (FAST PATH)
         self.sessions[session_id].append(msg)
 
-        # 2. SQLITE (PERSISTENT)
+        # 2. SQLITE (PERSISTENCE)
         conn = sqlite3.connect(self.db_path)
         cur = conn.cursor()
 
@@ -93,11 +95,14 @@ class Memory:
         conn.close()
 
     # =========================================================
-    # GET MESSAGES
+    # GET SHORT-TERM MEMORY (RAM)
     # =========================================================
     def get_messages(self, session_id: str, limit: int = 20) -> List[dict]:
         return list(self.sessions.get(session_id, []))[-limit:]
 
+    # =========================================================
+    # GET LONG-TERM MEMORY (DB)
+    # =========================================================
     def get_messages_db(self, session_id: str, limit: int = 20) -> List[dict]:
         conn = sqlite3.connect(self.db_path)
         cur = conn.cursor()
@@ -119,15 +124,14 @@ class Memory:
         return [{"role": r[0], "content": r[1], "timestamp": r[2]} for r in rows]
 
     # =========================================================
-    # FORMAT FOR LLM (CHAT HISTORY)
+    # FORMAT CHAT HISTORY FOR LLM
     # =========================================================
     def format_history(self, session_id: str, limit: int = 20) -> str:
         msgs = self.get_messages(session_id, limit)
-
         return "\n".join(f"{m['role'].upper()}: {m['content']}" for m in msgs).strip()
 
     # =========================================================
-    # EMBEDDING MODEL (LOCAL FIRST)
+    # EMBEDDING MODEL
     # =========================================================
     def _embed(self, text: str) -> List[float]:
         return ollama.embeddings(
@@ -136,7 +140,7 @@ class Memory:
         )["embedding"]
 
     # =========================================================
-    # SEMANTIC MEMORY WRITE
+    # ADD SEMANTIC MEMORY
     # =========================================================
     def add_semantic(self, session_id: str, content: str):
         emb = self._embed(content)
@@ -162,7 +166,11 @@ class Memory:
         cur = conn.cursor()
 
         cur.execute(
-            "SELECT content, embedding FROM memory_vectors WHERE session_id=?",
+            """
+            SELECT content, embedding
+            FROM memory_vectors
+            WHERE session_id = ?
+            """,
             (session_id,),
         )
 
@@ -185,7 +193,7 @@ class Memory:
         return [c for _, c in scored[:top_k]]
 
     # =========================================================
-    # 🧠 CONTEXT BUILDER (REPLACES ContextManager COMPLETELY)
+    # CONTEXT BUILDER (CORE ORCHESTRATOR DEPENDENCY)
     # =========================================================
     def build_context(
         self,
@@ -210,26 +218,22 @@ class Memory:
 
         sections = []
 
-        # SYSTEM (highest priority)
         if system:
             sections.append("### SYSTEM\n" + system)
 
-        # TOOL OUTPUT (ground truth)
         if tool:
             sections.append("### TOOL OUTPUT\n" + tool)
 
-        # RAG CONTEXT
         if rag:
             sections.append("### KNOWLEDGE (RAG)\n" + rag)
 
-        # CHAT HISTORY
         if history:
             sections.append("### CHAT HISTORY\n" + history)
 
         return "\n\n".join(sections).strip()
 
     # =========================================================
-    # CLEAR MEMORY
+    # CLEAR SESSION
     # =========================================================
     def clear_session(self, session_id: str):
         self.sessions.pop(session_id, None)
