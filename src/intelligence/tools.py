@@ -1,6 +1,5 @@
 import ast
 import operator as op
-from typing import Any, Callable, Dict
 
 
 # =========================================================
@@ -44,16 +43,11 @@ class SafeCalculator:
 # 🧠 TOOL REGISTRY
 # =========================================================
 class ToolRegistry:
-    """
-    Central tool execution layer
-    Router decides tool → Orchestrator executes
-    """
-
     def __init__(self):
-        self.tools: Dict[str, Callable] = {}
+        self.tools = {}
         self._register_defaults()
 
-    def register(self, name: str, func: Callable):
+    def register(self, name: str, func):
         self.tools[name] = func
 
     def _register_defaults(self):
@@ -61,11 +55,7 @@ class ToolRegistry:
         self.register("calculator", calc.evaluate)
         self.register("web_search", self._web_search_stub)
 
-    # =========================================================
-    # EXECUTION
-    # =========================================================
-    def execute(self, tool_name: str, query: str) -> Any:
-
+    def execute(self, tool_name: str, query: str):
         if tool_name not in self.tools:
             return {
                 "error": f"Tool '{tool_name}' not found",
@@ -74,58 +64,18 @@ class ToolRegistry:
 
         tool = self.tools[tool_name]
 
-        try:
-            # -------------------------
-            # TOOL-SPECIFIC HANDLING
-            # -------------------------
-            if tool_name == "calculator":
-                expression = self._extract_expression(query)
-                return tool(expression)
+        if tool_name == "calculator":
+            expression = self._extract_expression(query)
+            return tool(expression)
 
-            return tool(query)
+        return tool(query)
 
-        except Exception as e:
-            return {"error": str(e), "tool": tool_name}
-
-    # =========================================================
-    # SAFE EXPRESSION EXTRACTION
-    # =========================================================
-    def _extract_expression(self, query: str) -> str:
-        """
-        Converts:
-        'calculate 2+2'
-        → '2+2'
-        """
-
+    def _extract_expression(self, query: str):
         q = query.lower()
-
         for prefix in ["calculate", "solve", "what is"]:
             if q.startswith(prefix):
                 return query[len(prefix) :].strip()
-
         return query.strip()
 
-    # =========================================================
-    # FALLBACK DETECTION (ONLY IF ROUTER FAILS)
-    # =========================================================
-    def detect(self, query: str) -> str:
-        q = query.lower()
-
-        if any(k in q for k in ["+", "-", "*", "/", "calculate", "solve"]):
-            return "calculator"
-
-        if any(k in q for k in ["search", "google", "web"]):
-            return "web_search"
-
-        return "calculator"
-
-    # =========================================================
-    # WEB STUB
-    # =========================================================
     def _web_search_stub(self, query: str):
-        return {
-            "tool": "web_search",
-            "status": "not_implemented",
-            "query": query,
-            "result": "Web search layer will be implemented in next phase",
-        }
+        return {"tool": "web_search", "status": "not_implemented", "query": query}
