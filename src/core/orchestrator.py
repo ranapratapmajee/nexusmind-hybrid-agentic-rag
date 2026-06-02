@@ -5,28 +5,51 @@ from removed_files.tools.registry import ToolRegistry
 from src.core.memory import SQLiteMemory
 from src.core.planner import Planner
 from src.core.router import RouterAgent
+from src.governance.budget import BudgetManager
+
+# =========================
+# GOVERNANCE LAYER
+# =========================
+from src.governance.guardrails import Guardrails
+from src.governance.latency import LatencyTracker
+from src.governance.tracer import RequestTracer
 from src.intelligence.rag import RAG
 from src.llm.gateway import LLMGateway
 
 
 class Orchestrator:
     """
-    🧠 NexusMind Execution Engine v4 (FINAL LOCKED)
+    🧠 NexusMind Execution Engine v5 (GOVERNANCE ACTIVATED)
 
     FLOW:
-    User → Planner → Router → RAG/Tools → Memory Context → Gateway → Response
+    User → Guardrails → Budget → Planner → Router → RAG/Tools
+         → Context → LLM → Governance Logging → Response
     """
 
     def __init__(self):
-        print("[Orchestrator] Initializing NexusMind Core v4")
+        print("[Orchestrator] Initializing NexusMind Core v5 (GOVERNED)")
 
+        # =========================
+        # CORE
+        # =========================
         self.planner = Planner()
         self.router = RouterAgent()
         self.memory = SQLiteMemory()
 
+        # =========================
+        # INTELLIGENCE
+        # =========================
         self.rag = RAG()
         self.tools = ToolRegistry()
         self.llm = LLMGateway()
+
+        # =========================
+        # GOVERNANCE
+        # =========================
+        self.guardrails = Guardrails()
+        self.budget = BudgetManager()
+        self.tracer = RequestTracer()
+        self.latency = LatencyTracker()
 
         print("[Orchestrator] Ready.")
 
@@ -42,6 +65,7 @@ class Orchestrator:
     def run(self, query: str, session_id: str) -> Dict[str, Any]:
 
         start_time = time.time()
+        self.latency.start()
 
         trace = {
             "query": query,
@@ -54,31 +78,53 @@ class Orchestrator:
             "context": None,
             "response": None,
             "latency_ms": None,
+            "governance": {},
         }
 
-        # 1. MEMORY STORE (USER)
+        # =========================================================
+        # 1. GUARDRAILS (INPUT SAFETY)
+        # =========================================================
+        guard = self.guardrails.validate_query(query)
+        if not guard["safe"]:
+            return {
+                "error": "Blocked by guardrails",
+                "reason": guard["reason"],
+            }
+
+        # =========================================================
+        # 2. MEMORY STORE (USER)
+        # =========================================================
         self.memory.add_message(session_id, "user", query)
 
-        # 2. MEMORY LOAD
+        # =========================================================
+        # 3. MEMORY LOAD
+        # =========================================================
         chat_history = self._load_memory(session_id)
 
-        # 3. PLANNER
+        # =========================================================
+        # 4. PLANNER
+        # =========================================================
         plan = self.planner.create_plan(query=query, memory=chat_history)
         trace["planner"] = plan
 
-        # 4. ROUTER
+        # =========================================================
+        # 5. ROUTER
+        # =========================================================
         route = self.router.route(query)
         trace["route"] = route
 
         action = route["action"]
         optimized_query = route.get("optimized_query", query)
 
+        # =========================================================
+        # 6. CONTEXT HOLDERS
+        # =========================================================
         rag_context = ""
         tool_context = ""
         web_context = ""
 
         # =========================================================
-        # 5. INTELLIGENCE LAYER
+        # 7. INTELLIGENCE LAYER
         # =========================================================
 
         # -------------------------
@@ -120,7 +166,7 @@ class Orchestrator:
             trace["web"] = web_context
 
         # =========================================================
-        # 6. CONTEXT FUSION
+        # 8. CONTEXT FUSION
         # =========================================================
         final_context = self._build_context(
             memory=chat_history or "",
@@ -132,7 +178,21 @@ class Orchestrator:
         trace["context"] = final_context
 
         # =========================================================
-        # 7. LLM GENERATION
+        # 9. BUDGET CHECK (BEFORE LLM)
+        # =========================================================
+        budget_check = self.budget.can_proceed(
+            text=final_context,
+            estimated_cost=0.001,  # MVP static estimate (can upgrade later)
+        )
+
+        if not budget_check["allowed"]:
+            return {
+                "error": "Blocked by budget manager",
+                "reason": budget_check["reason"],
+            }
+
+        # =========================================================
+        # 10. LLM GENERATION
         # =========================================================
         response = self.llm.generate(
             query=query,
@@ -143,11 +203,25 @@ class Orchestrator:
 
         trace["response"] = response
 
-        # 8. MEMORY STORE (ASSISTANT)
+        # =========================================================
+        # 11. MEMORY STORE (ASSISTANT)
+        # =========================================================
         self.memory.add_message(session_id, "assistant", response)
 
-        # 9. LATENCY
+        # =========================================================
+        # 12. LATENCY TRACKING
+        # =========================================================
         trace["latency_ms"] = round((time.time() - start_time) * 1000, 2)
+        self.latency.mark_first_token()
+
+        # =========================================================
+        # 13. GOVERNANCE LOGGING
+        # =========================================================
+        trace["governance"] = {
+            "guardrails": guard,
+            "budget": self.budget.summary(),
+            "latency": self.latency.total_latency_ms(),
+        }
 
         return trace
 
@@ -160,12 +234,14 @@ class Orchestrator:
 
         def generator():
             try:
-                yield from self.llm.stream(
+                for token in self.llm.stream(
                     query=query,
                     context=trace["context"] or "",
                     route=trace["route"],
                     plan=trace["planner"],
-                )
+                ):
+                    self.latency.mark_first_token()
+                    yield token
             except Exception as e:
                 yield f"[Stream Error] {str(e)}"
 
