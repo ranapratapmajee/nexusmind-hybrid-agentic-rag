@@ -4,18 +4,7 @@ from typing import Any, Dict
 from src.core.memory import Memory
 from src.core.planner import Planner
 from src.core.router import RouterAgent
-from src.governance.budget import BudgetManager
-
-# =========================
-# GOVERNANCE LAYER
-# =========================
 from src.governance.guardrails import Guardrails
-from src.governance.latency import LatencyTracker
-from src.governance.tracer import RequestTracer
-
-# =========================
-# INTELLIGENCE LAYER
-# =========================
 from src.intelligence.rag import RAG
 from src.intelligence.tools import ToolRegistry
 from src.llm.gateway import LLMGateway
@@ -23,37 +12,29 @@ from src.llm.gateway import LLMGateway
 
 class Orchestrator:
     """
-    🧠 NexusMind Execution Engine v5 (GOVERNANCE ACTIVATED)
+    🧠 NexusMind Execution Engine v7 (TRACE + UI READY + STREAM FIXED)
 
-    FLOW:
-    User → Guardrails → Budget → Planner → Router → RAG/Tools
-         → Memory Context → LLM → Governance Logging → Response
+    DESIGN GOALS:
+    - Clean execution pipeline
+    - UI-friendly trace structure
+    - Separate execution vs streaming
     """
 
     def __init__(self):
-        print("[Orchestrator] Initializing NexusMind Core v5 (GOVERNED)")
+        print("[Orchestrator] Initializing NexusMind Core v7 (TRACE UI READY)")
 
-        # =========================
         # CORE
-        # =========================
         self.planner = Planner()
         self.router = RouterAgent()
         self.memory = Memory()
 
-        # =========================
         # INTELLIGENCE
-        # =========================
         self.rag = RAG()
         self.tools = ToolRegistry()
         self.llm = LLMGateway()
 
-        # =========================
-        # GOVERNANCE
-        # =========================
+        # SAFETY
         self.guardrails = Guardrails()
-        self.budget = BudgetManager()
-        self.tracer = RequestTracer()
-        self.latency = LatencyTracker()
 
         print("[Orchestrator] Ready.")
 
@@ -64,203 +45,232 @@ class Orchestrator:
         return self.memory.format_history(session_id, limit=limit)
 
     # =========================================================
-    # MAIN FLOW
+    # TRACE BUILDER (UI READY FORMAT)
+    # =========================================================
+    def _step(self, trace: Dict, step: str, stage: str, data: Any = None):
+        trace["timeline"].append(
+            {
+                "step": step,
+                "stage": stage,  # planning | routing | rag | tool | llm
+                "timestamp": time.time(),
+                "data": data,
+            }
+        )
+
+    # =========================================================
+    # MAIN EXECUTION PIPELINE
     # =========================================================
     def run(self, query: str, session_id: str) -> Dict[str, Any]:
 
-        query = query.strip() if query else ""
-
-        if not query:
-            return {
-                "error": "Empty query",
-                "reason": "Query cannot be empty",
-                "latency_ms": 0,
-            }
-
-        start_time = time.time()
-        self.latency.start()
+        query = (query or "").strip()
 
         trace = {
             "query": query,
             "session_id": session_id,
-            "planner": None,
+            "timeline": [],
+            "tokens": {
+                "rag_tokens": 0,
+                "tool_tokens": 0,
+                "llm_tokens": 0,
+            },
             "route": None,
-            "rag": None,
-            "tool": None,
-            "web": None,
-            "context": None,
+            "planner": None,
+            "context": "",
             "response": None,
-            "latency_ms": None,
-            "governance": {},
         }
 
+        start_time = time.time()
+
         # =========================================================
-        # 1. GUARDRAILS (INPUT SAFETY)
+        # 1. GUARDRAILS
         # =========================================================
         guard = self.guardrails.validate_query(query)
         if not guard["safe"]:
-            return {
-                "error": "Blocked by guardrails",
-                "reason": guard["reason"],
-            }
+            trace["blocked"] = True
+            trace["reason"] = guard["reason"]
+            return trace
+
+        self._step(trace, "guardrails_passed", "safety", guard)
 
         # =========================================================
-        # 2. MEMORY STORE (USER)
+        # 2. MEMORY
         # =========================================================
         self.memory.add_message(session_id, "user", query)
+        history = self._load_memory(session_id)
+        self._step(trace, "memory_loaded", "memory", len(history))
 
         # =========================================================
-        # 3. MEMORY LOAD
+        # 3. PLANNER
         # =========================================================
-        chat_history = self._load_memory(session_id)
-
-        # =========================================================
-        # 4. PLANNER
-        # =========================================================
-        plan = self.planner.create_plan(query=query)
+        plan = self.planner.create_plan(query)
         trace["planner"] = plan
+        self._step(trace, "plan_created", "planning", plan)
 
         # =========================================================
-        # 5. ROUTER
+        # 4. ROUTER
         # =========================================================
         route = self.router.route(query)
         trace["route"] = route
+        self._step(trace, "route_decided", "routing", route)
 
         action = route["action"]
         optimized_query = route.get("optimized_query", query)
 
         # =========================================================
-        # 6. INTELLIGENCE LAYER
+        # 5. RAG
         # =========================================================
         rag_context = ""
-        tool_context = ""
-        web_context = ""
-
-        # -------------------------
-        # RAG
-        # -------------------------
         if action in ["RAG_SEARCH", "HYBRID"]:
-            rag_result = self.rag.retrieve(
-                query=optimized_query,
-                top_k=5,
-            )
+            rag_result = self.rag.retrieve(optimized_query, top_k=5)
+            rag_context = rag_result.get("context", "")
 
-            rag_context = (
-                rag_result.get("context", "")
-                if isinstance(rag_result, dict)
-                else str(rag_result)
-            )
+            trace["tokens"]["rag_tokens"] = len(rag_context.split())
+            self._step(trace, "rag_completed", "rag", rag_result)
 
-            trace["rag"] = rag_context
-
-        # -------------------------
-        # TOOLS
-        # -------------------------
+        # =========================================================
+        # 6. TOOL
+        # =========================================================
+        tool_context = ""
         if action in ["EXECUTE_TOOL", "HYBRID"]:
             tool_name = route.get("tool") or self.tools.detect(query)
 
-            try:
-                tool_output = self.tools.execute(tool_name, query)
-                tool_context = str(tool_output)
-            except Exception as e:
-                tool_context = f"[Tool Error] {str(e)}"
+            tool_output = self.tools.execute(tool_name, query)
+            tool_context = str(tool_output)
 
-            trace["tool"] = tool_context
-
-        # -------------------------
-        # WEB (RESERVED)
-        # -------------------------
-        if action in ["WEB_SEARCH", "HYBRID"]:
-            web_context = "[WEB LAYER RESERVED - NOT IMPLEMENTED]"
-            trace["web"] = web_context
+            trace["tokens"]["tool_tokens"] = len(tool_context.split())
+            self._step(trace, "tool_completed", "tool", tool_name)
 
         # =========================================================
         # 7. CONTEXT FUSION
         # =========================================================
-        final_context = self._build_context(
-            memory=chat_history or "",
-            rag=rag_context or "",
-            tool=tool_context or "",
-            web=web_context or "",
+        context = self._build_context(
+            memory=history,
+            rag=rag_context,
+            tool=tool_context,
         )
 
-        trace["context"] = final_context
+        trace["context"] = context
+        self._step(trace, "context_built", "fusion", len(context.split()))
 
         # =========================================================
-        # 8. BUDGET CHECK (BEFORE LLM)
-        # =========================================================
-        budget_check = self.budget.can_proceed(
-            text=final_context,
-            estimated_cost=0.001,
-        )
-
-        if not budget_check["allowed"]:
-            return {
-                "error": "Blocked by budget manager",
-                "reason": budget_check["reason"],
-            }
-
-        # =========================================================
-        # 9. LLM GENERATION
+        # 8. LLM GENERATION
         # =========================================================
         response = self.llm.generate(
             query=query,
-            context=final_context,
+            context=context,
             route=route,
             plan=plan,
         )
 
         trace["response"] = response
+        trace["tokens"]["llm_tokens"] = len(response.split())
+
+        self._step(trace, "llm_completed", "llm", response[:120])
 
         # =========================================================
-        # 10. MEMORY STORE (ASSISTANT)
+        # 9. MEMORY SAVE
         # =========================================================
         self.memory.add_message(session_id, "assistant", response)
 
-        # =========================================================
-        # 11. LATENCY TRACKING
-        # =========================================================
         trace["latency_ms"] = round((time.time() - start_time) * 1000, 2)
-        self.latency.mark_first_token()
-
-        # =========================================================
-        # 12. GOVERNANCE LOGGING
-        # =========================================================
-        trace["governance"] = {
-            "guardrails": guard,
-            "budget": self.budget.summary(),
-            "latency": self.latency.total_latency_ms(),
-        }
 
         return trace
 
     # =========================================================
-    # STREAMING
+    # STREAMING (FIXED CLEAN DESIGN)
     # =========================================================
     def run_stream(self, query: str, session_id: str):
 
-        trace = self.run(query, session_id)
+        query = query.strip()
 
-        def generator():
-            try:
-                for token in self.llm.stream(
-                    query=query,
-                    context=trace["context"] or "",
-                    route=trace["route"],
-                    plan=trace["planner"],
-                ):
-                    self.latency.mark_first_token()
-                    yield token
-            except Exception as e:
-                yield f"[Stream Error] {str(e)}"
+        trace = {
+            "query": query,
+            "timeline": [],
+            "tokens": {"rag": 0, "tool": 0, "llm": 0},
+            "latency_ms": 0,
+        }
 
-        return generator(), trace
+        def event(step: str):
+            trace["timeline"].append(step)
+            return f"EVENT|THINK|{step}\n"
+
+        start = time.time()
+
+        # 1. Guardrails
+        guard = self.guardrails.validate_query(query)
+        if not guard["safe"]:
+            yield "EVENT|BLOCKED|true\n"
+            return
+
+        yield event("guardrails_passed")
+
+        # 2. Memory
+        history = self._load_memory(session_id)
+        yield event("memory_loaded")
+
+        # 3. Planner
+        plan = self.planner.create_plan(query)
+        yield event("plan_created")
+
+        # 4. Router
+        route = self.router.route(query)
+        yield event("route_decided")
+
+        action = route["action"]
+        optimized_query = route.get("optimized_query", query)
+
+        # 5. RAG
+        rag_context = ""
+        if action in ["RAG_SEARCH", "HYBRID"]:
+            yield event("rag_started")
+
+            rag_result = self.rag.retrieve(optimized_query)
+            rag_context = rag_result.get("context", "")
+
+            trace["tokens"]["rag"] = len(rag_context.split())
+            yield event("rag_completed")
+
+        # 6. TOOL
+        tool_context = ""
+        if action in ["EXECUTE_TOOL", "HYBRID"]:
+            yield event("tool_started")
+
+            tool_name = self.tools.detect(query)
+            tool_output = self.tools.execute(tool_name, query)
+
+            tool_context = str(tool_output)
+            trace["tokens"]["tool"] = len(tool_context.split())
+
+            yield event("tool_completed")
+
+        # 7. CONTEXT
+        context = self._build_context(history, rag_context, tool_context)
+        yield event("context_built")
+
+        # 8. LLM STREAM (REAL LIVE ANSWER)
+        yield event("llm_started")
+
+        full = ""
+
+        for token in self.llm.stream(
+            query=query,
+            context=context,
+            route=route,
+            plan=plan,
+        ):
+            full += token
+            trace["tokens"]["llm"] += 1
+            yield f"TOKEN|{token}"
+
+        trace["response"] = full
+        trace["latency_ms"] = round((time.time() - start) * 1000, 2)
+
+        yield f"\nTRACE|{trace}\n"
 
     # =========================================================
     # CONTEXT BUILDER
     # =========================================================
-    def _build_context(self, memory="", rag="", tool="", web="") -> str:
-
+    def _build_context(self, memory="", rag="", tool="") -> str:
         sections = []
 
         if tool:
@@ -268,9 +278,6 @@ class Orchestrator:
 
         if rag:
             sections.append("### KNOWLEDGE\n" + rag)
-
-        if web:
-            sections.append("### WEB\n" + web)
 
         if memory:
             sections.append("### MEMORY\n" + memory)
