@@ -11,12 +11,11 @@ API_URL = "http://127.0.0.1:9000/chat/stream"
 st.set_page_config(page_title="NexusMind", layout="wide")
 
 # =========================================================
-# CSS (CLEAN UI)
+# CSS
 # =========================================================
 st.markdown(
     """
     <style>
-
     .user-bubble {
         background: #DCF8C6;
         padding: 10px 14px;
@@ -37,24 +36,6 @@ st.markdown(
         float: left;
         clear: both;
     }
-
-    .thinking-box {
-        background: #0f172a;
-        color: #e2e8f0;
-        padding: 8px 10px;
-        border-radius: 8px;
-        font-size: 12px;
-        margin-bottom: 8px;
-    }
-
-    .trace-box {
-        font-size: 11px;
-        background: #111827;
-        color: #d1d5db;
-        padding: 6px;
-        border-radius: 6px;
-    }
-
     </style>
     """,
     unsafe_allow_html=True,
@@ -75,16 +56,13 @@ if "is_streaming" not in st.session_state:
 if "pending_query" not in st.session_state:
     st.session_state.pending_query = ""
 
-messages = st.session_state.sessions.setdefault(st.session_state.current_session, [])
-
-# =========================================================
-# RESET TRACE PER QUERY ONLY
-# =========================================================
 if "trace_steps" not in st.session_state:
     st.session_state.trace_steps = []
 
+messages = st.session_state.sessions.setdefault(st.session_state.current_session, [])
+
 # =========================================================
-# GREETING (ALWAYS FIRST)
+# GREETING
 # =========================================================
 if len(messages) == 0:
     messages.append(
@@ -110,7 +88,7 @@ with st.sidebar:
 # HEADER
 # =========================================================
 st.title("🧠 NexusMind — Nexa AI Assistant")
-st.caption("Live Thinking + Streaming Answer + Compact Trace")
+st.caption("Live Thinking + Streaming Answer")
 
 # =========================================================
 # INPUT
@@ -122,7 +100,7 @@ if user_input and not st.session_state.is_streaming:
 
     st.session_state.pending_query = user_input
     st.session_state.is_streaming = True
-    st.session_state.trace_steps = []  # RESET TRACE PER QUERY
+    st.session_state.trace_steps = []
 
     st.rerun()
 
@@ -142,12 +120,13 @@ for msg in messages:
         )
 
 # =========================================================
-# STREAMING LOGIC
+# STREAMING LOGIC (FINAL + BUFFER SAFE)
 # =========================================================
 if st.session_state.is_streaming:
     query = st.session_state.pending_query
 
     full_response = ""
+    buffer = ""
 
     thinking_box = st.empty()
     answer_box = st.empty()
@@ -155,43 +134,61 @@ if st.session_state.is_streaming:
     try:
         with requests.post(
             API_URL,
-            json={"query": query, "session_id": st.session_state.current_session},
+            json={
+                "query": query,
+                "session_id": st.session_state.current_session,
+            },
             stream=True,
         ) as r:
-            for chunk in r.iter_content(chunk_size=64):
+            for chunk in r.iter_content(chunk_size=128):
                 if not chunk:
                     continue
 
-                text = chunk.decode("utf-8").strip()
+                buffer += chunk.decode("utf-8")
 
-                # =========================
-                # THINKING EVENTS
-                # =========================
-                if text.startswith("EVENT|THINK|"):
-                    step = text.split("|", 2)[2]
-                    st.session_state.trace_steps.append(step)
+                # process complete events only
+                while "\n" in buffer:
+                    line, buffer = buffer.split("\n", 1)
 
-                    thinking_box.markdown(
-                        "🧠 **Nexa Thinking (live):**\n"
-                        + "\n".join([f"- {s}" for s in st.session_state.trace_steps])
-                    )
-                    continue
+                    if not line.strip():
+                        continue
 
-                # =========================
-                # ANSWER TOKENS
-                # =========================
-                if text.startswith("TOKEN|"):
-                    token = text.split("|", 1)[1]
-                    full_response += token + " "
+                    parts = line.split("|", 2)
+                    if len(parts) < 3:
+                        continue
 
-                    answer_box.markdown(
-                        f"<div class='assistant-bubble'>{full_response}</div>",
-                        unsafe_allow_html=True,
-                    )
-                    continue
+                    event_type, source, content = parts
 
-                # fallback
-                full_response += text
+                    # =========================
+                    # EVENT (THINKING / TRACE)
+                    # =========================
+                    if event_type == "EVENT":
+                        step = f"{source}: {content}"
+                        st.session_state.trace_steps.append(step)
+
+                        thinking_box.markdown(
+                            "🧠 **Thinking:**\n"
+                            + "\n".join(
+                                [f"- {s}" for s in st.session_state.trace_steps]
+                            )
+                        )
+
+                    # =========================
+                    # TOKEN STREAM
+                    # =========================
+                    elif event_type == "TOKEN":
+                        full_response += content
+
+                        answer_box.markdown(
+                            f"<div class='assistant-bubble'>{full_response}</div>",
+                            unsafe_allow_html=True,
+                        )
+
+                    # =========================
+                    # FINAL RESPONSE
+                    # =========================
+                    elif event_type == "FINAL":
+                        full_response = content
 
     except Exception as e:
         full_response = f"⚠️ Error: {str(e)}"
@@ -207,14 +204,9 @@ if st.session_state.is_streaming:
     st.rerun()
 
 # =========================================================
-# TRACE PANEL (ONLY CURRENT QUERY - COLLAPSIBLE)
+# TRACE PANEL
 # =========================================================
 if st.session_state.trace_steps:
-    with st.expander("🧠 Trace (current request only)", expanded=False):
-        st.markdown("### Steps (compact)")
-
+    with st.expander("🧠 Trace", expanded=False):
         for i, step in enumerate(st.session_state.trace_steps, 1):
             st.markdown(f"`{i}. {step}`")
-
-        st.markdown("---")
-        st.markdown(f"**Total Steps:** {len(st.session_state.trace_steps)}")

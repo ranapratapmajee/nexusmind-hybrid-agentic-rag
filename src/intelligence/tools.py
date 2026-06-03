@@ -1,5 +1,6 @@
 import ast
 import operator as op
+from typing import Any, Dict
 
 
 # =========================================================
@@ -16,12 +17,23 @@ class SafeCalculator:
         ast.USub: op.neg,
     }
 
-    def evaluate(self, expression: str) -> float:
+    def evaluate(self, expression: str) -> Dict[str, Any]:
         try:
             node = ast.parse(expression, mode="eval").body
-            return self._eval(node)
+            result = self._eval(node)
+
+            return {
+                "expression": expression,
+                "result": result,
+                "success": True,
+            }
+
         except Exception as e:
-            return {"error": f"Invalid expression: {str(e)}"}
+            return {
+                "expression": expression,
+                "error": str(e),
+                "success": False,
+            }
 
     def _eval(self, node):
         if isinstance(node, ast.Constant):
@@ -40,7 +52,7 @@ class SafeCalculator:
 
 
 # =========================================================
-# 🧠 TOOL REGISTRY
+# 🧠 TOOL REGISTRY (EVENT-BUS READY)
 # =========================================================
 class ToolRegistry:
     def __init__(self):
@@ -50,32 +62,73 @@ class ToolRegistry:
     def register(self, name: str, func):
         self.tools[name] = func
 
+    # ---------------------------------------------------------
+    # DEFAULT TOOLS
+    # ---------------------------------------------------------
     def _register_defaults(self):
         calc = SafeCalculator()
         self.register("calculator", calc.evaluate)
         self.register("web_search", self._web_search_stub)
 
-    def execute(self, tool_name: str, query: str):
+    # ---------------------------------------------------------
+    # TOOL EXECUTION (STANDARDIZED OUTPUT)
+    # ---------------------------------------------------------
+    def execute(self, tool_name: str, query: str) -> Dict[str, Any]:
+
         if tool_name not in self.tools:
             return {
-                "error": f"Tool '{tool_name}' not found",
+                "tool": tool_name,
+                "error": "Tool not found",
                 "available_tools": list(self.tools.keys()),
+                "success": False,
             }
 
         tool = self.tools[tool_name]
 
-        if tool_name == "calculator":
-            expression = self._extract_expression(query)
-            return tool(expression)
+        try:
+            if tool_name == "calculator":
+                expression = self._extract_expression(query)
+                result = tool(expression)
+            else:
+                result = tool(query)
 
-        return tool(query)
+            return {
+                "tool": tool_name,
+                "input": query,
+                "output": result,
+                "success": True,
+            }
 
-    def _extract_expression(self, query: str):
-        q = query.lower()
-        for prefix in ["calculate", "solve", "what is"]:
+        except Exception as e:
+            return {
+                "tool": tool_name,
+                "input": query,
+                "error": str(e),
+                "success": False,
+            }
+
+    # ---------------------------------------------------------
+    # EXPRESSION EXTRACTION (SAFE + CLEAN)
+    # ---------------------------------------------------------
+    def _extract_expression(self, query: str) -> str:
+        q = query.lower().strip()
+
+        prefixes = ["calculate", "solve", "what is", "="]
+
+        for prefix in prefixes:
             if q.startswith(prefix):
                 return query[len(prefix) :].strip()
+
         return query.strip()
 
-    def _web_search_stub(self, query: str):
-        return {"tool": "web_search", "status": "not_implemented", "query": query}
+    # ---------------------------------------------------------
+    # STUB TOOL (FUTURE WEB SEARCH INTEGRATION)
+    # ---------------------------------------------------------
+    def _web_search_stub(self, query: str) -> Dict[str, Any]:
+        return {
+            "tool": "web_search",
+            "query": query,
+            "results": [],
+            "status": "not_implemented",
+            "success": True,
+        }

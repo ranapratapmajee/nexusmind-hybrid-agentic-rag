@@ -4,30 +4,38 @@ from typing import Any, Dict
 
 class Guardrails:
     """
-    🛡️ NexusMind Safety Layer (Production)
+    🛡️ NexusMind Safety Layer (EventBus-Aligned Final)
+
+    ROLE:
+    - Pure validation layer
+    - No streaming, no side-effects
+    - Used by Orchestrator only
 
     Covers:
     - Prompt injection detection
     - Query validation
-    - Context validation (RAG safety)
-    - Embedding validation (critical for Chroma)
-    - Lightweight orchestrator-safe checks
+    - Context validation
+    - Embedding validation
     """
 
     def __init__(self):
-        # Prompt injection / jailbreak patterns
+        # -------------------------
+        # PRECOMPILED PATTERNS (PERF OPTIMIZED)
+        # -------------------------
         self.block_patterns = [
-            r"ignore previous instructions",
-            r"system prompt",
-            r"reveal.*prompt",
-            r"act as.*system",
-            r"jailbreak",
-            r"developer mode",
-            r"you are now",
-            r"override rules",
+            re.compile(r"ignore previous instructions"),
+            re.compile(r"system prompt"),
+            re.compile(r"reveal.*prompt"),
+            re.compile(r"act as.*system"),
+            re.compile(r"jailbreak"),
+            re.compile(r"developer mode"),
+            re.compile(r"you are now"),
+            re.compile(r"override rules"),
         ]
 
-        # hard limits (can later move to config.yaml)
+        # -------------------------
+        # LIMITS
+        # -------------------------
         self.max_query_len = 5000
         self.max_context_len = 20000
 
@@ -35,10 +43,6 @@ class Guardrails:
     # QUERY VALIDATION (ENTRY GATE)
     # =========================================================
     def validate_query(self, query: Any) -> Dict[str, Any]:
-        """
-        Validates user input before Planner / Router / RAG
-        """
-
         if query is None:
             return {"safe": False, "reason": "Query is None"}
 
@@ -56,22 +60,18 @@ class Guardrails:
         q_lower = query.lower()
 
         for pattern in self.block_patterns:
-            if re.search(pattern, q_lower):
+            if pattern.search(q_lower):
                 return {
                     "safe": False,
-                    "reason": f"Blocked prompt injection pattern: {pattern}",
+                    "reason": f"Blocked prompt injection pattern: {pattern.pattern}",
                 }
 
         return {"safe": True, "reason": "OK"}
 
     # =========================================================
-    # CONTEXT VALIDATION (RAG OUTPUT SAFETY)
+    # CONTEXT VALIDATION (RAG SAFETY)
     # =========================================================
     def validate_context(self, context: Any) -> Dict[str, Any]:
-        """
-        Ensures retrieved RAG context is safe & bounded
-        """
-
         if context is None:
             return {"safe": True, "reason": "Empty context"}
 
@@ -87,16 +87,9 @@ class Guardrails:
         return {"safe": True, "reason": "OK"}
 
     # =========================================================
-    # EMBEDDING VALIDATION (CRITICAL FOR RAG + CHROMA)
+    # EMBEDDING VALIDATION (CRITICAL FOR RAG)
     # =========================================================
     def validate_embedding(self, embedding: Any, expected_dim: int) -> Dict[str, Any]:
-        """
-        Prevents:
-        - Chroma dimension mismatch crash
-        - ingestion corruption
-        - query-time embedding mismatch
-        """
-
         if embedding is None:
             return {"safe": False, "reason": "Embedding is None"}
 
@@ -115,21 +108,15 @@ class Guardrails:
         return {"safe": True, "reason": "OK"}
 
     # =========================================================
-    # SAFE CHECK WRAPPER (FOR ORCHESTRATOR)
+    # SAFE CHECK HELPER
     # =========================================================
     def safe(self, result: Dict[str, Any]) -> bool:
-        """
-        Quick boolean helper for pipeline decisions
-        """
         return bool(result and result.get("safe", False))
 
     # =========================================================
-    # SIMPLE PROMPT SANITIZER (OPTIONAL UTILITY)
+    # SANITIZER (OPTIONAL)
     # =========================================================
     def sanitize(self, text: str) -> str:
-        """
-        Light cleanup before LLM / embedding
-        """
         if not isinstance(text, str):
             return ""
 

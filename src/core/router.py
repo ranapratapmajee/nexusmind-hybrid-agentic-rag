@@ -1,9 +1,7 @@
 from typing import Any, Dict, Literal, Optional
 
-from pydantic import BaseModel, Field
-
 # =========================================================
-# 🧠 ROUTE TYPES (FINAL ARCHITECTURE ALIGNED)
+# 🧠 ROUTE TYPES
 # =========================================================
 RouteType = Literal[
     "DIRECT_ANSWER",
@@ -17,75 +15,55 @@ ToolType = Literal["calculator", "web_search", "none"]
 
 
 # =========================================================
-# 🧠 ROUTER OUTPUT CONTRACT
-# =========================================================
-class RouterDecision(BaseModel):
-    action: RouteType = Field(..., description="Execution route")
-    tool: Optional[ToolType] = Field(default=None)
-    optimized_query: str = Field(..., description="Clean query for downstream systems")
-    confidence: float = Field(..., ge=0.0, le=1.0)
-    reasoning: str = Field(...)
-
-
-# =========================================================
-# 🧠 MULTI-MODEL ROUTER AGENT (CORE BRAIN)
+# 🧠 ROUTER ENGINE
 # =========================================================
 class RouterAgent:
     """
-    Model-agnostic routing engine.
+    NexusMind Routing Brain (EventBus Compatible)
 
     RULES:
-    - No LLM calls here
-    - No tool execution
-    - ONLY decision making
+    - No LLM calls
+    - No side effects
+    - No verbose reasoning output
+    - ONLY structured decision
     """
 
     def __init__(self):
-        print("[Router] Initialized (Final Multi-Route Engine)")
+        print("[Router] Initialized (EventBus-safe mode)")
 
     # =========================================================
-    # FAST HEURISTIC ENGINE (PRIMARY SIGNALS)
+    # HEURISTIC ENGINE
     # =========================================================
-    def _heuristic(self, query: str) -> Optional[RouterDecision]:
+    def _heuristic(self, query: str) -> Optional[Dict[str, Any]]:
         q = query.lower().strip()
 
         # -------------------------
-        # TOOL ROUTING (MATH / LOGIC)
+        # TOOL: CALCULATOR
         # -------------------------
         if any(k in q for k in ["calculate", "solve", "+", "-", "*", "/", "math"]):
-            return RouterDecision(
-                action="EXECUTE_TOOL",
-                tool="calculator",
-                optimized_query=query,
-                confidence=0.95,
-                reasoning="Mathematical operation detected",
-            )
+            return {
+                "action": "EXECUTE_TOOL",
+                "tool": "calculator",
+                "optimized_query": query,
+                "confidence": 0.95,
+            }
 
         # -------------------------
-        # WEB / REAL-TIME SIGNALS
+        # WEB / REAL-TIME
         # -------------------------
         if any(
             k in q
-            for k in [
-                "latest",
-                "news",
-                "today",
-                "current",
-                "weather",
-                "price",
-                "stock",
-            ]
+            for k in ["latest", "news", "today", "current", "weather", "price", "stock"]
         ):
-            return RouterDecision(
-                action="WEB_SEARCH",
-                tool="web_search",
-                optimized_query=query,
-                confidence=0.90,
-                reasoning="Real-time / external information required",
-            )
+            return {
+                "action": "WEB_SEARCH",
+                "tool": "web_search",
+                "optimized_query": query,
+                "confidence": 0.90,
+            }
 
         # -------------------------
-        # RAG / KNOWLEDGE SIGNALS
+        # RAG / KNOWLEDGE
         # -------------------------
         if any(
             k in q
@@ -100,28 +78,26 @@ class RouterAgent:
                 "difference",
             ]
         ):
-            return RouterDecision(
-                action="RAG_SEARCH",
-                tool=None,
-                optimized_query=query,
-                confidence=0.85,
-                reasoning="Knowledge-intensive query detected",
-            )
+            return {
+                "action": "RAG_SEARCH",
+                "tool": None,
+                "optimized_query": query,
+                "confidence": 0.85,
+            }
 
         # -------------------------
-        # DIRECT CHAT SIGNALS
+        # DIRECT CHAT
         # -------------------------
         if any(
             k in q
             for k in ["hi", "hello", "hey", "thanks", "good morning", "good evening"]
         ):
-            return RouterDecision(
-                action="DIRECT_ANSWER",
-                tool=None,
-                optimized_query=query,
-                confidence=0.9,
-                reasoning="Simple conversational query",
-            )
+            return {
+                "action": "DIRECT_ANSWER",
+                "tool": None,
+                "optimized_query": query,
+                "confidence": 0.9,
+            }
 
         return None
 
@@ -138,43 +114,40 @@ class RouterAgent:
         context = context or {}
 
         # =====================================================
-        # 1. FAST PATH (NO MODEL CALL)
+        # 1. FAST HEURISTIC PATH
         # =====================================================
-        heuristic = self._heuristic(query)
-        if heuristic:
-            return heuristic.model_dump()
+        result = self._heuristic(query)
+        if result:
+            return result
 
         # =====================================================
-        # 2. PLANNER-AWARE ENHANCEMENT (FUTURE READY)
+        # 2. PLANNER-AWARE MODE (FUTURE READY)
         # =====================================================
         if planner_hint:
             tasks = planner_hint.get("tasks", [])
 
             if "RAG_SEARCH" in tasks and "USE_TOOLS" in tasks:
-                return RouterDecision(
-                    action="HYBRID",
-                    tool="calculator",
-                    optimized_query=query,
-                    confidence=0.75,
-                    reasoning="Planner indicates multi-step reasoning (RAG + Tools)",
-                ).model_dump()
+                return {
+                    "action": "HYBRID",
+                    "tool": "calculator",
+                    "optimized_query": query,
+                    "confidence": 0.75,
+                }
 
             if "RAG_SEARCH" in tasks:
-                return RouterDecision(
-                    action="RAG_SEARCH",
-                    tool=None,
-                    optimized_query=query,
-                    confidence=0.7,
-                    reasoning="Planner suggests knowledge retrieval",
-                ).model_dump()
+                return {
+                    "action": "RAG_SEARCH",
+                    "tool": None,
+                    "optimized_query": query,
+                    "confidence": 0.7,
+                }
 
         # =====================================================
-        # 3. SAFE DEFAULT (NEVER BLOCK SYSTEM)
+        # 3. SAFE DEFAULT (NEVER FAIL SYSTEM)
         # =====================================================
-        return RouterDecision(
-            action="RAG_SEARCH",
-            tool=None,
-            optimized_query=query,
-            confidence=0.55,
-            reasoning="Fallback routing (safe default → RAG)",
-        ).model_dump()
+        return {
+            "action": "RAG_SEARCH",
+            "tool": None,
+            "optimized_query": query,
+            "confidence": 0.55,
+        }

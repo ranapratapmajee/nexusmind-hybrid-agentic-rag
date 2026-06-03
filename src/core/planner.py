@@ -1,101 +1,97 @@
+import json
 from typing import Dict, List
 
 import config
 
 
-class TaskPlan:
-    def __init__(self, tasks: List[str], reasoning: str):
-        self.tasks = tasks
-        self.reasoning = reasoning
-
-    def dict(self):
-        return {
-            "tasks": self.tasks,
-            "reasoning": self.reasoning,
-        }
-
-
+# =========================================================
+# 🧠 PLANNER ENGINE (CLEAN EVENTBUS VERSION)
+# =========================================================
 class Planner:
     """
-    🧠 Lightweight Planning Engine (FINAL VERSION)
+    NexusMind Planning Engine
 
     ROLE:
-    - Break query into execution steps
-    - DOES NOT decide routing (Router handles that)
-    - MUST be fast, cheap, deterministic first
+    - Convert query → execution tasks
+    - NO routing logic (router handles that)
+    - NO reasoning leakage
+    - PURE structured output
     """
 
     def __init__(self):
-        print("[Planner] Initialized (Deterministic + Hybrid Mode)")
+        print("[Planner] Initialized (EventBus-safe)")
 
     # =========================================================
-    # FAST RULE-BASED PLANNING (NO LLM - DEFAULT PATH)
+    # RULE-BASED PLANNING (FAST PATH)
     # =========================================================
-    def _rule_based_plan(self, query: str) -> TaskPlan:
-        q = query.lower()
+    def _rule_based_plan(self, query: str) -> List[str]:
+        q = query.lower().strip()
 
         tasks = []
 
-        # MEMORY always helpful for conversational queries
+        # MEMORY
         if any(k in q for k in ["my name", "remember", "who am i", "what did i"]):
             tasks.append("MEMORY")
 
-        # TOOL hints (but router decides final execution)
+        # TOOLS
         if any(k in q for k in ["calculate", "+", "-", "*", "/", "solve"]):
             tasks.append("USE_TOOLS")
 
-        # RAG hints
+        # RAG
         if any(
             k in q
             for k in ["explain", "what is", "how does", "architecture", "rag", "vector"]
         ):
             tasks.append("RAG_SEARCH")
 
-        # default fallback
+        # DEFAULT
         if not tasks:
             tasks.append("DIRECT")
 
-        return TaskPlan(
-            tasks=tasks,
-            reasoning="rule-based planning (fast path)",
-        )
+        return tasks
 
     # =========================================================
-    # MAIN PLANNING ENTRY
+    # MAIN ENTRY
     # =========================================================
     def create_plan(self, query: str, memory_context: str = "") -> Dict:
         """
-        Hybrid strategy:
-        1. Rule-based first (FAST + FREE)
-        2. LLM only if complexity detected
+        Returns:
+        {
+            "tasks": [...],
+        }
         """
 
-        # STEP 1: FAST PATH
-        rule_plan = self._rule_based_plan(query)
+        # -------------------------------------------------
+        # 1. FAST RULE-BASED PLAN
+        # -------------------------------------------------
+        tasks = self._rule_based_plan(query)
 
-        # If simple → return immediately (NO LLM COST)
-        if len(rule_plan.tasks) <= 2:
-            return rule_plan.dict()
+        # -------------------------------------------------
+        # 2. SIMPLE QUERIES → RETURN IMMEDIATELY
+        # -------------------------------------------------
+        if len(tasks) <= 2:
+            return {"tasks": tasks}
 
-        # STEP 2: OPTIONAL LLM ENHANCEMENT (ONLY FOR COMPLEX QUERIES)
+        # -------------------------------------------------
+        # 3. OPTIONAL LLM ENHANCEMENT
+        # -------------------------------------------------
         try:
             import ollama
 
             system_prompt = """
-You are an advanced planning engine.
+You are a planning engine.
 
-Convert user query into minimal execution steps.
+Convert query into minimal execution tasks.
 
-Allowed tasks:
+Allowed:
 - RAG_SEARCH
 - USE_TOOLS
 - MEMORY
 - DIRECT
 
-Return JSON only:
+Return JSON ONLY:
 {
-  "tasks": [...],
-  "reasoning": "short explanation"
+  "tasks": [...]
 }
 """
 
@@ -111,23 +107,19 @@ Return JSON only:
                 format={
                     "type": "object",
                     "properties": {
-                        "tasks": {"type": "array", "items": {"type": "string"}},
-                        "reasoning": {"type": "string"},
+                        "tasks": {"type": "array", "items": {"type": "string"}}
                     },
-                    "required": ["tasks", "reasoning"],
+                    "required": ["tasks"],
                 },
                 options={"temperature": 0.2},
             )
 
-            import json
-
             result = json.loads(response["message"]["content"])
 
-            return TaskPlan(
-                tasks=result.get("tasks", rule_plan.tasks),
-                reasoning=result.get("reasoning", "llm-enhanced planning"),
-            ).dict()
+            return {
+                "tasks": result.get("tasks", tasks),
+            }
 
         except Exception:
-            # SAFE FALLBACK (NEVER FAIL SYSTEM)
-            return rule_plan.dict()
+            # SAFE FALLBACK
+            return {"tasks": tasks}

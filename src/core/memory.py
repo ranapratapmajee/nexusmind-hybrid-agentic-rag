@@ -10,18 +10,19 @@ import ollama
 
 class Memory:
     """
-    🧠 NexusMind Unified Memory System (FINAL LOCKED VERSION)
+    🧠 NexusMind Unified Memory System (EVENTBUS-ALIGNED FINAL)
 
-    Responsibilities:
+    ROLE:
     -----------------------------------------
     1. Short-term memory (RAM cache for fast UI)
     2. Persistent memory (SQLite storage)
-    3. Semantic memory (vector embeddings in SQLite)
-    4. Context builder (single source of truth for LLM context)
+    3. Semantic memory (vector embeddings)
 
     RULE:
-    - This is the ONLY memory module in the system.
-    - No SQLiteMemory or other memory abstractions allowed.
+    - Memory = PURE DATA LAYER
+    - NO orchestration
+    - NO prompt building
+    - NO EventBus coupling
     """
 
     def __init__(self, db_path: str = "nexa_memory.db", max_messages: int = 50):
@@ -44,7 +45,7 @@ class Memory:
         conn = sqlite3.connect(self.db_path)
         cur = conn.cursor()
 
-        # Chat messages (short-term + persistent)
+        # Chat messages
         cur.execute("""
         CREATE TABLE IF NOT EXISTS messages (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -55,7 +56,7 @@ class Memory:
         )
         """)
 
-        # Semantic memory (long-term retrieval)
+        # Semantic memory
         cur.execute("""
         CREATE TABLE IF NOT EXISTS memory_vectors (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -70,7 +71,7 @@ class Memory:
         conn.close()
 
     # =========================================================
-    # ADD MESSAGE (RAM + SQLITE SYNC)
+    # ADD MESSAGE (RAM + SQLITE)
     # =========================================================
     def add_message(self, session_id: str, role: str, content: str):
         msg = {
@@ -79,10 +80,10 @@ class Memory:
             "timestamp": time.time(),
         }
 
-        # 1. RAM (FAST PATH)
+        # RAM cache
         self.sessions[session_id].append(msg)
 
-        # 2. SQLITE (PERSISTENCE)
+        # SQLite persistence
         conn = sqlite3.connect(self.db_path)
         cur = conn.cursor()
 
@@ -95,13 +96,13 @@ class Memory:
         conn.close()
 
     # =========================================================
-    # GET SHORT-TERM MEMORY (RAM)
+    # SHORT-TERM MEMORY (RAM)
     # =========================================================
     def get_messages(self, session_id: str, limit: int = 20) -> List[dict]:
         return list(self.sessions.get(session_id, []))[-limit:]
 
     # =========================================================
-    # GET LONG-TERM MEMORY (DB)
+    # LONG-TERM MEMORY (DB)
     # =========================================================
     def get_messages_db(self, session_id: str, limit: int = 20) -> List[dict]:
         conn = sqlite3.connect(self.db_path)
@@ -124,9 +125,9 @@ class Memory:
         return [{"role": r[0], "content": r[1], "timestamp": r[2]} for r in rows]
 
     # =========================================================
-    # FORMAT CHAT HISTORY FOR LLM
+    # CHAT HISTORY (LLM-READY FORMAT)
     # =========================================================
-    def format_history(self, session_id: str, limit: int = 20) -> str:
+    def get_chat_history(self, session_id: str, limit: int = 20) -> str:
         msgs = self.get_messages(session_id, limit)
         return "\n".join(f"{m['role'].upper()}: {m['content']}" for m in msgs).strip()
 
@@ -193,56 +194,23 @@ class Memory:
         return [c for _, c in scored[:top_k]]
 
     # =========================================================
-    # CONTEXT BUILDER (CORE ORCHESTRATOR DEPENDENCY)
-    # =========================================================
-    def build_context(
-        self,
-        session_id: str,
-        rag: str = "",
-        tool: str = "",
-        system: str = "",
-        max_tokens: int = 1200,
-    ) -> str:
-
-        history = self.format_history(session_id)
-
-        def trim(text: str, limit: int) -> str:
-            if not text:
-                return ""
-            return text[-limit:] if len(text) > limit else text
-
-        system = trim(system, 2000)
-        tool = trim(tool, 2000)
-        rag = trim(rag, 3000)
-        history = trim(history, 3000)
-
-        sections = []
-
-        if system:
-            sections.append("### SYSTEM\n" + system)
-
-        if tool:
-            sections.append("### TOOL OUTPUT\n" + tool)
-
-        if rag:
-            sections.append("### KNOWLEDGE (RAG)\n" + rag)
-
-        if history:
-            sections.append("### CHAT HISTORY\n" + history)
-
-        return "\n\n".join(sections).strip()
-
-    # =========================================================
     # CLEAR SESSION
     # =========================================================
     def clear_session(self, session_id: str):
+        # clear RAM
         self.sessions.pop(session_id, None)
 
+        # clear DB
         conn = sqlite3.connect(self.db_path)
         cur = conn.cursor()
 
         cur.execute(
             "DELETE FROM messages WHERE session_id=?",
+            (session_id,),
+        )
+
+        cur.execute(
+            "DELETE FROM memory_vectors WHERE session_id=?",
             (session_id,),
         )
 

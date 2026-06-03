@@ -1,9 +1,12 @@
+import threading
+
 import uvicorn
 from fastapi import FastAPI
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 import config
+from src.core.event_bus import EventBus
 from src.core.orchestrator import Orchestrator
 
 # =========================================================
@@ -12,6 +15,7 @@ from src.core.orchestrator import Orchestrator
 app = FastAPI(title="NexusMind API")
 
 bot = Orchestrator()
+event_bus = EventBus()
 
 
 # =========================================================
@@ -23,39 +27,37 @@ class ChatRequest(BaseModel):
 
 
 # =========================================================
-# STREAM CHAT (REAL EVENT STREAM)
+# STREAM CHAT (EVENTBUS TRUE PIPELINE)
 # =========================================================
 @app.post("/chat/stream")
 def chat_stream(req: ChatRequest):
 
-    def event_stream():
+    def run_orchestrator():
+        """
+        Runs orchestrator in background
+        (producer of events)
+        """
+        try:
+            bot.run(req.query, req.session_id)
+        except Exception as e:
+            event_bus.emit(
+                session_id=req.session_id,
+                event_type="EVENT",
+                source="server",
+                content=f"Orchestrator error: {str(e)}",
+            )
 
-        # REAL STREAM FROM ORCHESTRATOR
-        for event in bot.run_stream(req.query, req.session_id):
-            # -------------------------------------------------
-            # THINKING EVENTS
-            # -------------------------------------------------
-            if isinstance(event, str) and event.startswith("EVENT|"):
-                yield event + "\n"
-                continue
+    # run orchestrator async (non-blocking)
+    threading.Thread(target=run_orchestrator).start()
 
-            # -------------------------------------------------
-            # TOKEN STREAM
-            # -------------------------------------------------
-            if isinstance(event, str) and event.startswith("TOKEN|"):
-                yield event + "\n"
-                continue
-
-            # -------------------------------------------------
-            # FINAL TRACE
-            # -------------------------------------------------
-            if isinstance(event, str) and event.startswith("TRACE|"):
-                yield event + "\n"
-                continue
-
+    # stream from EventBus (consumer)
     return StreamingResponse(
-        event_stream(),
+        event_bus.stream(req.session_id),
         media_type="text/plain",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+        },
     )
 
 
