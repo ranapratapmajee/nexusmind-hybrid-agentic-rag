@@ -1,100 +1,42 @@
 #!/bin/bash
 
-echo "🚀 Starting NexusMind..."
+# Ensure script halts immediately if any sub-command fails
+set -e
 
-# =========================================
-# CONFIG
-# =========================================
-API_PORT=9000
-UI_PORT=8502
+# Clear console window for crisp log scanning
+clear
 
-# =========================================
-# CLEAN OLD PROCESSES (IMPORTANT FIX)
-# =========================================
-echo "🧹 Cleaning old processes..."
+echo "=================================================================="
+echo "🚀 INITIALIZING NEXUSMIND GRAPH-RAG AUTOMATION WORKSPACE"
+echo "=================================================================="
 
-pkill -f "uvicorn src.api.server:app" || true
-pkill -f "streamlit run frontend/streamlit_app.py" || true
-
-# free ports if stuck
-lsof -ti:$API_PORT | xargs kill -9 2>/dev/null || true
-lsof -ti:$UI_PORT | xargs kill -9 2>/dev/null || true
-
-# =========================================
-# Sync dependencies
-# =========================================
-echo "📦 Syncing dependencies..."
-uv sync
-
-# =========================================
-# Start ChromaDB (Docker)
-# =========================================
-echo "🐳 Starting ChromaDB..."
-docker compose up -d
-
-echo "⏳ Waiting for ChromaDB..."
-sleep 5
-
-# =========================================
-# Start FastAPI
-# =========================================
-echo "⚙️ Starting API on port $API_PORT..."
-uv run uvicorn src.api.server:app \
-    --host 127.0.0.1 \
-    --port $API_PORT \
-    --log-level warning &
-API_PID=$!
-
-sleep 2
-
-# =========================================
-# Start Streamlit UI
-# =========================================
-echo "🖥️ Starting UI on port $UI_PORT..."
-uv run streamlit run frontend/streamlit_app.py \
-    --server.port $UI_PORT \
-    --server.headless true \
-    --browser.gatherUsageStats false &
-UI_PID=$!
-
-sleep 3
-
-# =========================================
-# Open browser (SAFE SINGLE OPEN)
-# =========================================
-if [[ "$OSTYPE" == "darwin"* ]]; then
-    open "http://localhost:$UI_PORT"
+# 1. Check if Docker is active and containers are live using corrected Compose target names
+echo "Checking core database service instances (ChromaDB & Neo4j)..."
+if ! docker ps | grep -q "neo4j_container" || ! docker ps | grep -q "chromadb_container"; then
+    echo "⚠️  CRITICAL FAULT: Core Docker instances are offline!"
+    echo "Bootstrapping compose environment cluster..."
+    # Ensure containers are brought up if they don't exist yet, instead of just running start
+    docker compose up -d
+    sleep 3
 else
-    echo "🌐 Open manually: http://localhost:$UI_PORT"
+    echo "✅ Docker infrastructure containers verified online."
 fi
 
-# =========================================
-# STATUS
-# =========================================
-echo ""
-echo "✅ NexusMind is LIVE"
-echo "🌐 UI : http://localhost:$UI_PORT"
-echo "🔗 API: http://localhost:$API_PORT"
-echo ""
-echo "Press CTRL+C to stop..."
+# 2. Check if Ollama is running and has the models pulled
+echo "Verifying local M4 Ollama intelligence core..."
+if ! nc -z localhost 11434; then
+    echo "❌ CRITICAL FAULT: Ollama is not running on your Mac!"
+    echo "Please open the Ollama app or run 'ollama serve' in another terminal."
+    exit 1
+fi
 
-# =========================================
-# CLEAN EXIT
-# =========================================
-cleanup() {
-    echo ""
-    echo "🛑 Stopping services..."
+# Optional: Trigger quick ingestion checks
+# Uncomment the line below if you want to auto-run ingestion on startup:
+# uv run ingest_book.py
 
-    kill $API_PID 2>/dev/null
-    kill $UI_PID 2>/dev/null
+echo "------------------------------------------------------------------"
+echo "🖥️  LAUNCHING STREAMLIT USER INTERFACE CHAT DASHBOARD"
+echo "------------------------------------------------------------------"
 
-    echo "🐳 Stopping Docker..."
-    docker compose down
-
-    echo "👋 NexusMind stopped"
-    exit 0
-}
-
-trap cleanup SIGINT SIGTERM
-
-wait
+# 3. Launch Streamlit and suppress the verbose file watcher warnings
+uv run streamlit run app/ui/streamlit_app.py --server.fileWatcherType none

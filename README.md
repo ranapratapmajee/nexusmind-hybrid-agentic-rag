@@ -1,384 +1,211 @@
-# 🚀 NexusMind: Intelligent Hybrid LLM Orchestrator with RAG & Agentic Routing  
-### *An AI system that thinks before it responds — intelligently routing, reasoning, and executing every query across LLMs, RAG, and tools.*
+# NexusResearch 🤖
 
-![Python](https://img.shields.io/badge/Python-3.12-blue)
-![FastAPI](https://img.shields.io/badge/FastAPI-Backend-green)
-![Streamlit](https://img.shields.io/badge/Streamlit-Frontend-red)
-![ChromaDB](https://img.shields.io/badge/VectorDB-ChromaDB-orange)
-![Docker](https://img.shields.io/badge/Docker-Containerized-blue)
-![Status](https://img.shields.io/badge/Status-Active-success)
+NexusResearch is a production-grade, local-first **Graph-Driven Hybrid Retrieval-Augmented Generation (GraphRAG)** AI Agent framework optimized for Apple Silicon hardware.
+
+Instead of isolating context retrieval into standard isolated text matching, the system utilizes an asynchronous dual-engine matrix (ChromaDB for semantic vector coordinates + Neo4j for deterministic multi-hop knowledge connections). The architecture prioritizes a cost-efficient, low-latency execution flow, keeping computation completely local using MLX runtimes unless extreme structural complexity demands cloud reasoning fallbacks.
 
 ---
 
-## 🧠 What is NexusMind?
+## 🏗️ System Architecture & Lifecycle Topology
 
-**NexusMind** is a production-grade, hybrid AI orchestration system that intelligently routes, optimizes, and executes user queries across local models, retrieval systems, tools, and cloud LLMs.
+The system splits execution into clear boundaries: **User Interface Layout**, **Deterministic Intent Routing Control**, **Asynchronous Dual-Core Retrieval**, and **Compute Layer Selection**. 
 
-It is designed to go beyond traditional chatbots by introducing a decision-driven AI architecture that determines how each query should be solved before generating a response.
-
-At its core, NexusMind powers **Nexa**, a smart AI assistant that behaves like a system-level orchestrator rather than a simple LLM wrapper.
-
----
-
-## 🤖 Meet Nexa
-
-**Nexa** is the user-facing AI chatbot powered by NexusMind.
-
-Unlike traditional assistants, Nexa:
-
-- Routes queries intelligently (local vs RAG vs tools vs cloud)
-- Optimizes token usage and cost
-- Uses memory-aware conversations
-- Ensures structured, grounded responses
-
----
-
-## 🧠 Core Philosophy
-
-> **"Don’t send every query to a large model. Decide, optimize, and then execute."**
-
-Every request is evaluated for:
-- Complexity
-- Intent
-- Cost efficiency
-- Context availability
-
----
-
-## 🏗️ Architecture (Current + Future Vision)
-
-### 🔷 CURRENT ARCHITECTURE (Implemented)
+Below is the dynamic layout mapping your specific control and agent execution flow:
 
 ```text
-User (Nexa UI - Streamlit)
-        │
-        ▼
-┌────────────────────────────┐
-│      FastAPI Server        │
-│   (Streaming Gateway API)  │
-└─────────────┬──────────────┘
-              │
-              ▼
-┌────────────────────────────────────┐
-│   Orchestrator (NexusMind Core)    │
-│   - State Manager                  │
-│   - Context Manager                │
-│   - Session Memory Layer           │
-└─────────────┬──────────────────────┘
-              │
-              ▼
-┌────────────────────────────┐
-│     Router Agent           │
-│ (Intent + Complexity + Cost)│
-└───────┬─────────┬──────────┘
-        │         │
-        │         │
-        ▼         ▼
-┌────────────┐  ┌────────────────┐
-│ Local LLM  │  │ RAG (ChromaDB) │
-│ (Ollama)   │  │ Retrieval      │
-└────────────┘  └────────────────┘
-        │
-        ▼
-┌────────────────────────────┐
-│ Tool System (Registry)     │
-│ - Calculator               │
-│ - Future tools             │
-└────────────────────────────┘
-        │
-        ▼
-┌────────────────────────────┐
-│ Middleware Layer           │
-│ - Token optimization       │
-│ - Context trimming         │
-│ - Logging / Guardrails     │
-└─────────────┬──────────────┘
-              │
-              ▼
-┌────────────────────────────┐
-│ Synthesis Agent            │
-│ (Final Response Builder)   │
-└─────────────┬──────────────┘
-              │
-              ▼
-┌────────────────────────────┐
-│ Streamlit UI (Nexa)        │
-└────────────────────────────┘
+       [ User Query Interface Stream (Streamlit UI) ]
+                             │
+                             ▼
+               ┌───────────────────────────┐
+               │    ControlRouter Gate     │
+               └─────────────┬─────────────┘
+                             │
+            deterministic_route_check(query)
+                             │
+     ┌───────────────────────┼────────────────────────┐
+     ▼                       ▼                        ▼
+[ CASUAL_CHITCHAT ]   [ GRAPH_SEARCH ]         [ STANDARD_RAG / DYNAMIC ]
+     │                       │                        │
+     │                       ▼                        ▼
+     │               Force Graph Context     Engage Parallel Fetches
+     │                       │                        │
+     ▼                       └───────────┬────────────┘
+Bypass DB Layers                         │
+     │                                   ▼
+     │                      ┌──────────────────────────┐
+     │                      │  asyncio.run(retriever)  │
+     │                      └────────────┬─────────────┘
+     │                                   │
+     │                  ┌────────────────┴────────────────┐
+     │                  ▼                                 ▼
+     │          ┌────────────────┐                ┌────────────────┐
+     │          │  ChromaDB TopK │                │   Neo4j Multi  │
+     │          │  Vector Search │                │   Hop Cypher   │
+     │          └───────┬────────┘                └───────┬────────┘
+     │                  │                                 │
+     │                  └────────────────┬────────────────┘
+     │                                   ▼
+     │                       [ Fused Context Block ]
+     │                                   │
+     │                        determine_compute_target()
+     │                                   │
+     │                         ┌─────────┴─────────┐
+     │                         ▼                   ▼
+     │                 [ Complexity LOW ]  [ Complexity HIGH ]
+     │                         │                   │
+     ▼                         ▼                   ▼
+(MLX Local Engine)     (MLX Local Engine)  (Gemini Cloud Engine)
+ [Qwen-2.5-Coder]       [Qwen-2.5-Coder]     [gemini-2.5-flash]
+     │                         │                   │
+     └─────────────────────────┼───────────────────┘
+                               ▼
+                    [ Synthesized UI Response ]
+
 ```
 
-### 🔮 FUTURE ARCHITECTURE (Planned Evolution)
+### The 4 Execution Phases:
 
-```text
-┌────────────────────────────────────────────────────────────┐
-│                     PRESENTATION LAYER                     │
-│                    (Streamlit - Nexa UI)                  │
-└───────────────────────────┬────────────────────────────────┘
-                            │
-                            ▼
-┌────────────────────────────────────────────────────────────┐
-│                  ORCHESTRATION LAYER (CORE)               │
-│                                                            │
-│  ┌──────────────┐   ┌──────────────┐   ┌──────────────┐   │
-│  │ Planner      │   │ Router       │   │ Memory Agent │   │
-│  └──────────────┘   └──────────────┘   └──────────────┘   │
-│          │                  │                 │             │
-│          └──────────┬───────┴───────┬────────┘             │
-│                     ▼               ▼                      │
-│              Tool Execution     Retrieval Control         │
-│                                                            │
-└───────────────────────────┬────────────────────────────────┘
-                            │
-                            ▼
-┌────────────────────────────────────────────────────────────┐
-│                 INTELLIGENCE & DATA LAYER                 │
-│                                                            │
-│   ┌──────────────┐   ┌──────────────┐   ┌──────────────┐  │
-│   │ RAG System   │   │ Web Search   │   │ Tools System │  │
-│   │ (ChromaDB)   │   │ (Scraping)   │   │ (Plugins)    │  │
-│   └──────────────┘   └──────────────┘   └──────────────┘  │
-│                                                            │
-└───────────────────────────┬────────────────────────────────┘
-                            │
-                            ▼
-┌────────────────────────────────────────────────────────────┐
-│                    MODEL ABSTRACTION LAYER                │
-│                                                            │
-│   ┌────────────────────────────────────────────────────┐   │
-│   │ LLM Gateway (SINGLE ENTRY POINT)                   │   │
-│   │ - Ollama                                           │   │
-│   │ - Gemini                                           │   │
-│   │ - OpenAI                                           │   │
-│   │ - Anthropic                                        │   │
-│   └────────────────────────────────────────────────────┘   │
-│                                                            │
-└───────────────────────────┬────────────────────────────────┘
-                            │
-                            ▼
-┌────────────────────────────────────────────────────────────┐
-│                 GOVERNANCE LAYER (CRITICAL)               │
-│                                                            │
-│   - Critic / Validator                                    │
-│   - Cost Tracker                                          │
-│   - Latency Monitor                                       │
-│   - Token Budget Manager                                  │
-│                                                            │
-└────────────────────────────────────────────────────────────┘
-```
+1. **Control Routing Gate (`ControlRouter`)**: Intercepts queries instantly using lightweight token-matching. If a greeting or basic chitchat phrase is flagged, it returns `CASUAL_CHITCHAT` and forces an instant shortcut straight to local compilation, completely bypassing database read I/O operations.
+2. **Parallel Retrieval Layer (`HybridRetriever`)**: If the query requires factual lookup, it spins up an asynchronous task envelope. ChromaDB computes vector distances via Apple Silicon GPU cores (`mps`), while Neo4j simultaneously scans entity relationships.
+3. **Context Fusion Layer (`NexusResearchAgent`)**: Combines retrieved text strings and graph assertions into a structured workspace block, maintaining metadata attribution records.
+4. **Compute Target Selection**: Inspects context token weights and graph connectivity dimensions. If structural complexity is low ($< 5$ linked graph nodes), it executes locally to preserve privacy and cloud API limits. If structural complexity is highly dense ($> 5$ linked graph nodes), it activates the premium cloud fallback model.
 
 ---
 
-## ⚙️ Tech Stack
+## 📁 Repository Directory Blueprint
 
-### 🧠 LLM Layer
-
-* Local: Ollama (`qwen2.5-coder:3b-instruct`)
-* Embeddings: `nomic-embed-text`
-* Cloud (optional fallback): Gemini / OpenAI
-
-### 📚 RAG System
-
-* ChromaDB (Dockerized)
-* Semantic chunking + retrieval ranking
-
-### 🌐 Backend
-
-* FastAPI (async streaming API)
-
-### 🧪 Frontend
-
-* Streamlit (Nexa chat UI)
-
-### ⚡ Infrastructure
-
-* Docker (vector DB)
-* uv (Python dependency manager)
-
----
-
-## 📁 Project Structure
+This repository is organized into strict, decoupled domains separating infrastructure configuration, persistence storage, and programmatic logic layers:
 
 ```text
-nexusmind/
-│
-├── frontend/                  # UI (ONLY UI logic)
-│
-├── src/
-│   ├── core/                  # 🧠 ORCHESTRATION LAYER (IMPORTANT)
-│   │   ├── orchestrator.py
-│   │   ├── planner.py
-│   │   ├── router.py
-│   │   ├── memory_manager.py
-│   │
-│   ├── intelligence/         # 📚 DATA + REASONING LAYER
-│   │   ├── rag/
-│   │   ├── web_search/
-│   │   ├── tools/
-│   │
-│   ├── llm/                  # 🤖 MODEL ABSTRACTION (SINGLE ENTRY)
-│   │   ├── gateway.py
-│   │   ├── providers/
-│   │
-│   ├── governance/          # ⚙️ ALL OPTIMIZATION LIVES HERE
-│   │   ├── cost.py
-│   │   ├── latency.py
-│   │   ├── tracer.py
-│   │   ├── guardrails.py
-│   │
-│   ├── api/
-│   ├── pipeline/
-│   ├── database/
-│   ├── memory/
-│
+.
+├── PLANNING.md              # Long-term milestones and active sprint tracker
+├── README.md                # System documentation, architecture maps, and launch gates
+├── run.sh                   # Unified master startup script (Docker check + Streamlit)
+├── ingest_book.py           # Automated AI-powered text to graph extraction script
+├── test.py                  # Sandbox integration test validation cradle script
+├── docker-compose.yaml      # Multi-container cluster layout mapping (Neo4j & ChromaDB)
+├── pyproject.toml           # Modern package blueprint properties declaration
+├── uv.lock                  # Lockfile enforcing exact deterministic library builds
 ├── config/
-├── data/
-├── docker-compose.yaml
-├── run.sh
-└── README.md
+│   ├── config.yaml          # System network parameters, port assignments, and models configuration
+│   └── settings.py          # Strict environment evaluation layer enforced by Pydantic
+├── data/                    # Local storage drop-zone for text documents and target PDF books
+├── storage/                 # Data persistence directories mounted out of Docker engines
+│   ├── chroma/              # SQLite indices and raw coordinate binaries
+│   └── neo4j/               # Relational data blocks, authorization paths, and transaction logs
+└── app/                     # Framework source code domain
+    ├── main.py              # Central application initialization connection injector
+    ├── prompts.py           # Global directory for system rules and instructions
+    ├── agents/
+    │   └── research_agent.py # Context orchestration loop coordinator
+    ├── control/
+    │   └── router.py        # Intent interpreter and compute cost optimizer router
+    ├── ingestion/
+    │   ├── chunker.py       # Text window sliding partition manager
+    │   ├── pdf_loader.py    # PyPDF extraction extraction driver
+    │   ├── vector_ingestor.py # Chroma DB chunk storage manager
+    │   └── graph_ingestor.py  # Neo4j APOC Cypher transaction manager
+    ├── retrieval/
+    │   ├── vector_retriever.py # Chroma top-k vector extraction interface
+    │   ├── graph_retriever.py  # Cypher graph link explorer
+    │   └── hybrid_retriever.py # Asynchronous retrieval fusion coordinator
+    ├── services/
+    │   ├── chroma_service.py   # Low-level vector socket manager
+    │   ├── neo4j_service.py    # Active transactional bolt connection driver
+    │   ├── embedding_service.py # Native Hugging Face sentence-transformers embedding manager
+    │   └── llm_service.py      # Dual-endpoint generation client adapter (MLX & Gemini)
+    └── ui/
+        └── streamlit_app.py    # Interface presentation application dashboard
+
 ```
 
 ---
 
-## 🔥 Key Features
+## ⚡ Quick Start Protocol
 
-### 🧠 Intelligent Routing Engine
+### 1. Launch Infrastructure Stack
 
-* Chooses best execution path dynamically
-* Avoids unnecessary LLM calls
-
-### 🔀 Hybrid LLM Strategy
-
-* Local-first architecture
-* Cloud fallback only when required
-
-### 📚 RAG Pipeline
-
-* PDF ingestion
-* Semantic retrieval via ChromaDB
-
-### 🔌 Tool System
-
-* Calculator (active)
-* Web search (future: scraping-based)
-* Extensible plugin architecture
-
-### 🧠 Memory System
-
-* Session-based SQLite memory
-
-### ⚡ Streaming Responses
-
-* Real-time response generation
-
----
-
-## 🚀 Quick Start
-
-### 1. Install dependencies
+Ensure your Docker runtime configuration environment is active (Colima/Docker Desktop), then bring up your background engine containers from the root workspace folder:
 
 ```bash
-uv sync
+docker compose up -d
+
 ```
 
-### 2. Start vector DB
+### 2. Configure Environment Parameters
+
+Create a `.env` file at the root of the repository to feed your access configurations securely:
+
+```ini
+GEMINI_API_KEY=AIzaSy...YourSecretKey
+NEO4J_PASSWORD=********
+
+```
+
+### 3. Grant Executive Launcher Permissions
+
+Configure permission controls to make the startup automation script operational:
 
 ```bash
-docker-compose up -d
+chmod +x run.sh
+
 ```
 
-### 3. Run full system
+### 4. Execute the Unified Launch Routine
+
+Execute the main launcher script. This wrapper script verifies database states, sets log suppression filters, patches the Streamlit file-watcher tracking bug, and brings up your interface workspace instantly:
 
 ```bash
 ./run.sh
+
 ```
 
 ---
 
-## 🌐 Access
+## 📚 Dynamic Knowledge Graph Ingestion Workflow
 
-* 🖥️ UI → [http://localhost:8502](http://localhost:8502)
-* ⚡ API → [http://localhost:9000](http://localhost:9000)
-
----
-
-## 📥 Ingest Data
+To ingest deep reference documentation (like the pre-loaded **Abhinav Kimothi GraphRAG Guide** inside `/data`), run the automated structural extractor:
 
 ```bash
-uv run src/pipeline/ingest.py
+uv run ingest_book.py
+
 ```
 
+### What happens under the hood:
+
+1. **Semantic Vector Indexing**: The file is parsed into pages and vectorized locally on your MacBook's hardware GPU (`mps` acceleration) using `nomic-embed-text-v1.5` at **768 dimensions**, then stored in ChromaDB.
+2. **AI Triplet Mining Loop**: The text windows pass through a cloud processing step where core concepts are converted into clean structured tracking entities (e.g., `CHROMA_DB` $\rightarrow$ `STORES` $\rightarrow$ `VECTOR_EMBEDDINGS`) and written to your Neo4j container.
+
 ---
 
-## ⚙️ Environment Variables
+## 🔍 Visualizing the Knowledge Graph
 
-```env
-ENVIRONMENT=development
+To view, trace, and explore your generated entity-relationship network visually:
 
-CHROMA_HOST=127.0.0.1
-CHROMA_PORT=8000
-CHROMA_COLLECTION_NAME=nexusmind_knowledge
+1. Open your browser and navigate to the Neo4j Dashboard interface at **`http://localhost:7474`**.
+2. Connect using the credentials configured in your system configuration parameters:
+* **Connection URL**: `bolt://localhost:7687`
+* **Username**: `neo4j`
+* **Password**: `********`
 
-API_PORT=9000
-STREAMLIT_PORT=8502
 
-ROUTER_MODEL=qwen2.5-coder:3b-instruct
-SYNTHESIS_MODEL=qwen2.5-coder:3b-instruct
-EMBEDDING_MODEL=nomic-embed-text
+3. Enter this query in the workspace terminal command bar to view the visual graph web:
 
-MAX_TOKEN_BUDGET=4000
-LLM_TEMPERATURE=0.0
+```cypher
+MATCH (source:Entity)-[relationship]->(target:Entity) 
+RETURN source, relationship, target 
+LIMIT 150;
 
-GEMINI_API_KEY=
-OPENAI_API_KEY=
+
+MATCH (n)
+OPTIONAL MATCH (n)-[r]->(m)
+RETURN n, r, m
+LIMIT 300
+
+
 ```
 
----
+*Tip: Click the `Entity` label badge at the top of the result panel and change the display property label setting to **`name`** to show human-readable text labels on your screen circles!*
 
-## 🧠 What This Project Demonstrates
-
-* Agentic AI system design
-* Hybrid RAG architecture
-* LLM routing strategies
-* Cost-aware AI engineering
-* Production-grade backend structure
 
 ---
-
-## 🚀 Roadmap
-
-### Phase 1 (Current)
-
-* RAG pipeline
-* Router + orchestrator
-* Tool system (basic)
-
-### Phase 2 (Next)
-
-* Web search (free scraping-based)
-* Better middleware optimization
-* Context compression
-
-### Phase 3 (Advanced)
-
-* Multi-agent planner
-* Autonomous task execution
-* Smart tool chaining
-
-### Phase 4 (Future Vision)
-
-* E-commerce scraping (Amazon / Flipkart)
-* Fully autonomous agent workflows
-* Self-improving memory system
-* Multimodal input support
-
----
-
-## 🧠 Key Insight
-
-> **NexusMind is the brain.
-> Nexa is the voice.**
-
----
-
-## 👨‍💻 Author
-
-**Ranapratap Majee**

@@ -15,13 +15,19 @@ wheels/
 # Models
 models/
 
-# Local Chroma db or data
+# Database storage
+docker/chroma/data/
+docker/neo4j/data/
+docker/neo4j/logs/
 .chroma/
 db/
 chroma_db/
 chroma-data/
 data/
 chroma_storage/
+neo4j-data/
+neo4j-logs/
+storage/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

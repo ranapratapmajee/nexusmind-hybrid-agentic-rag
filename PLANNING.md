@@ -1,353 +1,130 @@
-# 🚀 NexusMind Execution Plan (Final Stable Version)
+# NexusResearch — Architecture, Lifecycle Planning & Scale Strategy
 
-## 🧠 Project Status Overview
-
-NexusMind is now a **fully modular AI orchestration system with a working RAG pipeline, governance scaffolding, and layered architecture separation**.
-
-This system is no longer experimental ingestion code — it is a **structured AI runtime with clean separation of concerns**.
+This document serves as the master engineering ledger, design blueprint, and scale strategy for the NexusResearch GraphRAG environment.
 
 ---
 
-# 🧱 Current System Architecture (REAL IMPLEMENTATION)
+## 1. Architectural Strategy & Lifecycle Mechanics
 
-```text id="nxm_arch_final"
-┌────────────────────────────────────────────────────────────┐
-│                    PRESENTATION LAYER                     │
-│                frontend/streamlit_app.py                  │
-└───────────────────────────┬────────────────────────────────┘
-                            │
-                            ▼
-┌────────────────────────────────────────────────────────────┐
-│                 ORCHESTRATION LAYER (CORE)               │
-│                                                            │
-│  core/orchestrator.py   → main control flow              │
-│  core/router.py         → routing logic (RAG/LLM/TOOLS)  │
-│  core/planner.py        → task decomposition (v1)        │
-│  core/memory.py         → session memory system          │
-│                                                            │
-└───────────────────────────┬────────────────────────────────┘
-                            │
-                            ▼
-┌────────────────────────────────────────────────────────────┐
-│               INTELLIGENCE LAYER (RAG SYSTEM)            │
-│                                                            │
-│  intelligence/ingestion.py   → self-healing ETL pipeline │
-│  intelligence/rag.py         → retrieval + context build │
-│  intelligence/tools.py       → calculator + tool system  │
-│                                                            │
-│  Vector DB: ChromaDB (docker-compose.yaml)               │
-│  Embeddings: Ollama (nomic-embed-text)                   │
-│                                                            │
-└───────────────────────────┬────────────────────────────────┘
-                            │
-                            ▼
-┌────────────────────────────────────────────────────────────┐
-│                    MODEL LAYER (LLM)                     │
-│                                                            │
-│  llm/gateway.py → unified LLM abstraction                │
-│                                                            │
-│  Providers:                                               │
-│    - Ollama (active)                                     │
-│    - Gemini (planned)                                    │
-│    - OpenAI (planned)                                    │
-│    - Anthropic (planned)                                 │
-│                                                            │
-└───────────────────────────┬────────────────────────────────┘
-                            │
-                            ▼
-┌────────────────────────────────────────────────────────────┐
-│                 GOVERNANCE LAYER (ACTIVE)                │
-│                                                            │
-│  governance/guardrails.py   → input safety checks        │
-│  governance/cost.py         → token/cost tracking (WIP)  │
-│  governance/latency.py      → performance tracking (WIP)  │
-│  governance/tracer.py       → request lifecycle logs     │
-│  governance/budget.py       → token limits (WIP)         │
-│                                                            │
-└────────────────────────────────────────────────────────────┘
+NexusResearch handles multi-source research tasks by executing an optimized, multi-engine routing lifecycle. Rather than treating vector distances and structural networks as separate entities, the system treats them as complementary dimensions of a single semantic layer.
+
+### 1.1 Intent Interception & Parallel Ingestion Mechanics
+Before triggering database lookups, queries pass through the `ControlRouter` gate. If conversational chatter or a standard greeting is matched, the engine fast-paths the query straight to local compute. This protects network resources and locks out external API quota drain entirely.
+
+For true informational queries, the system engages an asynchronous pipeline:
+
+```text
+                  [ Runtime User Query ]
+                             │
+                             ▼
+              ┌─────────────────────────────┐
+              │   ControlRouter Intercept   │
+              └──────────────┬──────────────┘
+                             │
+            deterministic_route_check(query)
+                             │
+     ┌───────────────────────┼────────────────────────┐
+     ▼                       ▼                        ▼
+[ CASUAL_CHITCHAT ]   [ GRAPH_SEARCH ]         [ STANDARD_RAG ]
+     │                       │                        │
+     │                       ▼                        ▼
+     │               Force Graph Context     Engage Parallel Fetches
+     │                       │                        │
+     ▼                       └───────────┬────────────┘
+Bypass DB Layers                         │
+     │                                   ▼
+     │                      ┌──────────────────────────┐
+     │                      │  asyncio.run(retriever)  │
+     │                      └────────────┬─────────────┘
+     │                                   │
+     │                  ┌────────────────┴────────────────┐
+     │                  ▼                                 ▼
+     │          ┌────────────────┐                ┌────────────────┐
+     │          │  ChromaDB TopK │                │   Neo4j Multi  │
+     │          │  Vector Search │                │   Hop Cypher   │
+     │          └───────┬────────┘                └───────┬────────┘
+     │                  │                                 │
+     │                  └────────────────┬────────────────┘
+     │                                   ▼
+     │                       [ Fused Context Block ]
+     │                                   │
+     │                        determine_compute_target()
+     │                                   │
+     │                         ┌─────────┴─────────┐
+     │                         ▼                   ▼
+     │                 [ Complexity LOW ]  [ Complexity HIGH ]
+     │                         │                   │
+     ▼                         ▼                   ▼
+(MLX Local Engine)     (MLX Local Engine)  (Gemini Cloud Engine)
+ [Qwen-2.5-Coder]       [Qwen-2.5-Coder]     [gemini-2.5-flash]
+
 ```
 
----
+### 1.2 Core Integration Fields
 
-# ✅ COMPLETED SYSTEM CAPABILITIES (STABLE)
-
-## 🏗️ Infrastructure Layer
-
-* [x] FastAPI backend (`src/api/server.py`)
-* [x] Streamlit frontend (`frontend/streamlit_app.py`)
-* [x] Dockerized ChromaDB (`docker-compose.yaml`)
-* [x] Persistent local memory (`nexa_memory.db`)
-* [x] Modular project architecture
+* **Primary Semantic Field**: Managed via a self-contained ChromaDB engine. Text arrays are converted into **768-dimensional normalized floating-point coordinate boundaries** using the `nomic-embed-text-v1.5` transformer architecture.
+* **Relational Field**: Handled via a multi-hop Neo4j Graph topology instance. Concepts are parsed dynamically via structured LLM schema prompts that ingest content and output explicit directional triplet matrices (`Source` $\rightarrow$ `Relation` $\rightarrow$ `Target`).
 
 ---
 
-## 📚 RAG SYSTEM (PRODUCTION READY v1)
+## 2. Modular Implementation Roadmap
 
-* [x] PDF + text ingestion pipeline
-* [x] Self-healing embedding system
-* [x] Ollama embeddings (`nomic-embed-text`)
-* [x] ChromaDB vector storage
-* [x] Working similarity retrieval
-* [x] Context builder inside `rag.py`
+### Phase 1: Local Control & Fast-Path Ingestion (Completed)
 
----
+* Enforce strict Pydantic environment configurations to catch missing configuration fields early.
+* Implement token match intercepts within `ControlRouter` to isolate basic conversational chit-chat from technical documentation.
+* Configure `pypdf` extraction sequences to feed long-context materials through local GPU accelerated embeddings (`mps` framework).
 
-## 🤖 MODEL LAYER
+### Phase 2: Entity Graph Enrichment Loop (Current Sprint)
 
-* [x] Ollama LLM integration via `gateway.py`
-* [x] Basic generation pipeline working
-* [x] Centralized model abstraction layer started
+* Transition from manual relational seeds to automated AI triplet mining.
+* Upgrade `LLMService` to ingest page text windows and extract structured JSON entity profiles using cloud endpoints for high reasoning accuracy.
+* Implement entity deduplication inside `GraphIngestor` via conditional Cypher `MERGE` statements to avoid concept fragmentation.
 
----
+### Phase 3: Graph-Driven Vector Context Expansion (Upcoming)
 
-## 🧠 CORE ORCHESTRATION (v1)
-
-* [x] Router (basic rule-based logic)
-* [x] Planner (initial structure present)
-* [x] Memory module (session-level persistence)
-* [x] End-to-end flow working:
-  UI → API → Orchestrator → RAG/LLM
+* Update `HybridRetriever` to extract unique entity nodes from the initial Neo4j multi-hop query.
+* Trigger an immediate secondary vector expansion inside ChromaDB using those graph entities as terms. This captures contextually relevant text fragments that sit below the raw semantic cosine similarity barrier of the initial user query.
+* Implement context ranking boundaries to remove duplicate indices when primary and secondary retrieval sweeps overlap.
 
 ---
 
-## ⚙️ GOVERNANCE (PARTIAL)
+## 3. Scale Plan & Future Production Hardening
 
-* [x] Guardrails (basic safety validation)
-* [x] Tracing foundation (request tracking structure exists)
+To migrate this architecture from a local MacBook Air environment to a high-availability enterprise production stack, the system will evolve across three main pillars:
 
----
+### 3.1 Distributed Infrastructure Decoupling
 
-## 🔧 TOOLS SYSTEM (v1)
+```text
+[ Streamlit UI App ] ──► [ Traefik / Envoy Load Balancer ]
+                               │
+            ┌──────────────────┴──────────────────┐
+            ▼                                     ▼
+┌──────────────────────┐               ┌──────────────────────┐
+│  Agent Worker Pods   │               │  Agent Worker Pods   │
+│   (FastAPI/ADK)      │               │   (FastAPI/ADK)      │
+└──────────┬───────────┘               └──────────┬───────────┘
+           │                                      │
+           └──────────────────┬───────────────────┘
+                              ▼
+            ┌─────────────────┴─────────────────┐
+            ▼                                   ▼
+┌──────────────────────┐             ┌──────────────────────┐
+│ Chroma Distributed   │             │  Neo4j Causal Cluster│
+│   Cluster (K8s)      │             │  (3-Node RAFT Group) │
+└──────────────────────┘             └──────────────────────┘
 
-* [x] Calculator tool
-* [x] Basic tool execution framework
-
----
-
-# 🚧 ACTIVE DEVELOPMENT PRIORITIES
-
----
-
-# 🔥 PHASE 1 — RAG v2 UPGRADE (HIGHEST IMPACT)
-
-## Current Problem
-
-* Chunking is still heuristic
-* No reranking
-* No semantic filtering
-
----
-
-## Upgrade Items
-
-### 1. Semantic Chunking (CRITICAL)
-
-Replace current:
-
-```python
-simple split / char-based chunking
 ```
 
-With:
+* **Storage Tier Migration**: Replace the single-file Chroma SQLite implementation with a distributed **Chroma Cluster orchestration** deployed on Kubernetes, decoupling write-heavy ingestion workers from read-only search operations.
+* **Graph Cluster Resilience**: Transition the standalone Neo4j Docker container into a **Neo4j Causal Cluster** configured with a 3-node Core RAFT group. This setup isolates intensive transactional graph ingestion writes to a master node while distributing search load across secondary read replicas.
 
-* sentence boundary detection
-* overlap control
-* structure-aware splitting (PDF headings)
+### 3.2 High-Throughput Ingestion Pipelines
 
----
+* **Asynchronous Message Bus**: Replace synchronous ingestion scripts (`ingest_book.py`) with an event-driven worker pool powered by **Celery and Redis/RabbitMQ**. Large books will stream onto a message queue, allowing multiple worker processes to parse, embed, and index distinct page arrays in parallel.
+* **Local Embedding Cluster**: Scale out local extraction by shifting the embedding layer from single-workstation MPS weights onto a dedicated microservice cluster running **vLLM or Hugging Face Text Embeddings Inference (TEI)** across unified, network-accessible data center GPUs.
 
-### 2. Reranker Layer (HIGH IMPACT)
+### 3.3 Graph Compaction & Community Clustering
 
-Add:
-
-* cosine retrieval → rerank → final context
-* improve precision dramatically
-
----
-
-### 3. Context Builder v2
-
-* token-aware trimming
-* priority ranking of chunks
-* source grouping
-
----
-
-### 4. Metadata Filtering
-
-Enable:
-
-* filename filtering
-* document type filtering
-* future: time/source weighting
-
----
-
-# 🧠 PHASE 2 — ROUTER v2 (CRITICAL SYSTEM UPGRADE)
-
-## Current State
-
-* heuristic routing only
-
----
-
-## Target Design
-
-```python id="router_v2"
-{
-  "route": "RAG | LLM | TOOL | HYBRID",
-  "confidence": float,
-  "reason": str,
-  "requires_retrieval": bool
-}
-```
-
----
-
-## Improvements
-
-* deterministic classification
-* query intent detection
-* fallback routing policy
-
----
-
-# 🧠 PHASE 3 — MEMORY SYSTEM UPGRADE
-
-## Current
-
-* session memory only
-
-## Upgrade Target
-
-* short-term + long-term separation
-* vector memory recall (RAG over memory)
-* context compression before LLM call
-
----
-
-# 🤖 PHASE 4 — LLM GATEWAY EXPANSION
-
-## Current
-
-* Ollama only
-
-## Next
-
-Unified interface:
-
-* Ollama (default)
-* Gemini (fallback reasoning)
-* OpenAI (advanced reasoning)
-* Anthropic (premium reasoning)
-
----
-
-# ⚙️ PHASE 5 — GOVERNANCE EXPANSION
-
-## Add Full Observability
-
-* token usage tracking
-* request-level tracing
-* latency measurement (TTFT + total)
-* cost estimation per call
-
----
-
-## Guardrails Upgrade
-
-* context window enforcement
-* prompt injection protection
-* safe output validation
-
----
-
-## Budget Control
-
-* max token per request
-* response trimming
-* fallback compression
-
----
-
-# 🧪 PHASE 6 — EVALUATION SYSTEM (HIGH VALUE)
-
-* retrieval relevance scoring
-* router accuracy evaluation
-* hallucination detection heuristics
-* benchmark dataset runner
-
----
-
-# ❌ NOT YET IMPLEMENTED (IMPORTANT FUTURE WORK)
-
----
-
-## ⚡ Streaming System (CRITICAL UX UPGRADE)
-
-* FastAPI SSE/WebSockets
-* token streaming from LLM
-* cancel/interrupt generation
-
----
-
-## 📊 Observability Dashboard
-
-* request tracing UI
-* cost analytics
-* latency graphs
-* routing distribution analytics
-
----
-
-## 🔁 Self-Improving Loop (ADVANCED)
-
-* retrieve → generate → critique → refine cycle
-
----
-
-# 🌐 FUTURE EVOLUTION (POST-MVP)
-
----
-
-## Multi-Agent Expansion
-
-* Planner Agent
-* Critic Agent
-* Tool Agent
-* Memory Agent
-
----
-
-## Intelligent Web Layer
-
-* real-time scraping
-* structured extraction
-* dynamic knowledge ingestion
-
----
-
-## Performance Engineering
-
-* caching layer
-* embedding reuse optimization
-* response compression
-
----
-
-# 🎯 FINAL SUCCESS DEFINITION
-
-NexusMind is production-ready when:
-
-* retrieval is reranked + context-aware
-* routing is deterministic
-* memory is multi-layered
-* governance tracks cost + latency
-* system is streaming-capable
-* failure recovery is automatic
-
----
-
-# 🧠 CORE DESIGN PRINCIPLE (FINAL)
-
-> “NexusMind is not a chatbot — it is a controlled intelligence orchestration system where every request is routed, retrieved, governed, and generated through structured intelligence layers.”
+* **Hierarchical Levenshtein Consolidation**: To combat graph pollution (e.g., preventing `VECTOR_RAG`, `VECTOR_RAG_SYSTEM`, and `RAG_PIPELINE` from spawning as three isolated circles), the system will introduce a backend deduplication engine. This worker will compute Levenshtein distance metrics and semantic token proximity, automatically merging duplicate aliases into unified master nodes.
+* **Graph Louvain Community Clustering**: Implement **Leiden/Louvain community detection algorithms** via the Neo4j Graph Data Science (GDS) library. The ingestion engine will periodically analyze density patterns to cluster closely related entities into higher-level "Topic Communities," allowing the agent to generate high-level global summaries of entire libraries rather than just pulling local page references.
